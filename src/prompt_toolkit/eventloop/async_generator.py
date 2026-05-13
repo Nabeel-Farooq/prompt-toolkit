@@ -1,5 +1,5 @@
 """
-Implementation for async generators.
+Utilities for working with asynchronous generators.
 """
 
 from __future__ import annotations
@@ -18,37 +18,41 @@ __all__ = [
 ]
 
 _T_Generator = TypeVar("_T_Generator", bound=AsyncGenerator[Any, None])
+_T = TypeVar("_T")
 
 
 @asynccontextmanager
 async def aclosing(
     thing: _T_Generator,
 ) -> AsyncGenerator[_T_Generator, None]:
-    "Similar to `contextlib.aclosing`, in Python 3.10."
+    """
+    Async equivalent of `contextlib.closing`.
+
+    Ensures the async generator is properly closed when exiting
+    the context manager.
+    """
     try:
         yield thing
     finally:
         await thing.aclose()
 
 
-# By default, choose a buffer size that's a good balance between having enough
-# throughput, but not consuming too much memory. We use this to consume a sync
-# generator of completions as an async generator. If the queue size is very
-# small (like 1), consuming the completions goes really slow (when there are a
-# lot of items). If the queue size would be unlimited or too big, this can
-# cause overconsumption of memory, and cause CPU time spent producing items
-# that are no longer needed (if the consumption of the async generator stops at
-# some point). We need a fixed size in order to get some back pressure from the
-# async consumer to the sync producer. We choose 1000 by default here. If we
-# have around 50k completions, measurements show that 1000 is still
-# significantly faster than a buffer of 100.
+# Default queue size chosen to balance:
+# - throughput
+# - memory usage
+# - back-pressure between producer/consumer
+#
+# Small buffers significantly reduce performance for large result sets,
+# while unbounded buffers can waste memory and CPU on unused items.
 DEFAULT_BUFFER_SIZE: int = 1000
-
-_T = TypeVar("_T")
 
 
 class _Done:
-    pass
+    """
+    Sentinel object used to indicate completion.
+    """
+
+    __slots__ = ()
 
 
 async def generator_to_async_generator(
@@ -56,71 +60,74 @@ async def generator_to_async_generator(
     buffer_size: int = DEFAULT_BUFFER_SIZE,
 ) -> AsyncGenerator[_T, None]:
     """
-    Turn a generator or iterable into an async generator.
+    Convert a synchronous iterable/generator into an async generator.
 
-    This works by running the generator in a background thread.
+    The iterable is consumed in a background thread while items are passed
+    through a bounded queue to provide back-pressure.
 
-    :param get_iterable: Function that returns a generator or iterable when
-        called.
-    :param buffer_size: Size of the queue between the async consumer and the
-        synchronous generator that produces items.
+    :param get_iterable:
+        Callable returning a synchronous iterable or generator.
+    :param buffer_size:
+        Queue size between producer and async consumer.
     """
+    if buffer_size < 1:
+        raise ValueError("buffer_size must be at least 1.")
+
     quitting = False
-    # NOTE: We are limiting the queue size in order to have back-pressure.
+
+    # Bounded queue to avoid excessive memory usage.
     q: Queue[_T | _Done] = Queue(maxsize=buffer_size)
+
     loop = get_running_loop()
+
+    def safe_put(item: _T | _Done) -> bool:
+        """
+        Put an item into the queue while respecting cancellation.
+        """
+        while True:
+            try:
+                q.put(item, timeout=1)
+                return True
+
+            except Full:
+                if quitting:
+                    return False
 
     def runner() -> None:
         """
-        Consume the generator in background thread.
-        When items are received, they'll be pushed to the queue.
+        Consume the iterable in a background thread and push items
+        into the queue.
         """
         try:
             for item in get_iterable():
-                # When this async generator was cancelled (closed), stop this
-                # thread.
                 if quitting:
                     return
 
-                while True:
-                    try:
-                        q.put(item, timeout=1)
-                    except Full:
-                        if quitting:
-                            return
-                        continue
-                    else:
-                        break
+                if not safe_put(item):
+                    return
 
         finally:
-            while True:
-                try:
-                    q.put(_Done(), timeout=1)
-                except Full:
-                    if quitting:
-                        return
-                    continue
-                else:
-                    break
+            safe_put(_Done())
 
-    # Start background thread.
+    # Start producer thread.
     runner_f = run_in_executor_with_context(runner)
 
     try:
         while True:
             try:
                 item = q.get_nowait()
+
             except Empty:
                 item = await loop.run_in_executor(None, q.get)
+
             if isinstance(item, _Done):
                 break
-            else:
-                yield item
+
+            yield item
+
     finally:
-        # When this async generator is closed (GeneratorExit exception, stop
-        # the background thread as well. - we don't need that anymore.)
+        # Stop producer thread when async generator closes early.
         quitting = True
 
-        # Wait for the background thread to finish. (should happen right after
-        # the last item is yielded).
+        # Ensure background thread exits cleanly.
         await runner_f
