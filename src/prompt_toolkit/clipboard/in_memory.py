@@ -11,34 +11,47 @@ __all__ = [
 
 class InMemoryClipboard(Clipboard):
     """
-    Default clipboard implementation.
-    Just keep the data in memory.
+    Default in-memory clipboard implementation.
 
-    This implements a kill-ring, for Emacs mode.
+    Stores clipboard history in a kill ring, primarily used for Emacs mode.
     """
 
-    def __init__(self, data: ClipboardData | None = None, max_size: int = 60) -> None:
-        assert max_size >= 1
+    def __init__(
+        self,
+        data: ClipboardData | None = None,
+        max_size: int = 60,
+    ) -> None:
+        if max_size < 1:
+            raise ValueError("max_size must be at least 1.")
 
         self.max_size = max_size
-        self._ring: deque[ClipboardData] = deque()
+
+        # Using `maxlen` automatically trims old entries.
+        self._ring: deque[ClipboardData] = deque(maxlen=max_size)
 
         if data is not None:
             self.set_data(data)
 
     def set_data(self, data: ClipboardData) -> None:
+        """
+        Add clipboard data to the front of the kill ring.
+        """
         self._ring.appendleft(data)
 
-        while len(self._ring) > self.max_size:
-            self._ring.pop()
-
     def get_data(self) -> ClipboardData:
+        """
+        Return the most recent clipboard entry.
+        """
         if self._ring:
             return self._ring[0]
-        else:
-            return ClipboardData()
+
+        return ClipboardData()
 
     def rotate(self) -> None:
+        """
+        Rotate the kill ring.
+
+        The current item moves to the end, exposing the next entry.
+        """
         if self._ring:
-            # Add the very first item at the end.
             self._ring.append(self._ring.popleft())
