@@ -1,5 +1,5 @@
 """
-Clipboard for command line interface.
+Clipboard abstractions for command line interfaces.
 """
 
 from __future__ import annotations
@@ -19,81 +19,108 @@ __all__ = [
 
 class ClipboardData:
     """
-    Text on the clipboard.
+    Data stored on the clipboard.
 
-    :param text: string
-    :param type: :class:`~prompt_toolkit.selection.SelectionType`
+    :param text:
+        Clipboard text content.
+    :param type:
+        :class:`~prompt_toolkit.selection.SelectionType`
     """
 
+    __slots__ = ("text", "type")
+
     def __init__(
-        self, text: str = "", type: SelectionType = SelectionType.CHARACTERS
+        self,
+        text: str = "",
+        type: SelectionType = SelectionType.CHARACTERS,
     ) -> None:
         self.text = text
         self.type = type
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"text={self.text!r}, type={self.type!r})"
+        )
+
 
 class Clipboard(metaclass=ABCMeta):
     """
-    Abstract baseclass for clipboards.
-    (An implementation can be in memory, it can share the X11 or Windows
-    keyboard, or can be persistent.)
+    Abstract base class for clipboard implementations.
+
+    Clipboard implementations may:
+    - store data in memory
+    - integrate with system clipboards (X11/Windows/macOS)
+    - persist clipboard history
     """
 
     @abstractmethod
     def set_data(self, data: ClipboardData) -> None:
         """
-        Set data to the clipboard.
+        Store clipboard data.
 
-        :param data: :class:`~.ClipboardData` instance.
+        :param data:
+            :class:`~.ClipboardData` instance.
         """
 
-    def set_text(self, text: str) -> None:  # Not abstract.
+    def set_text(self, text: str) -> None:
         """
-        Shortcut for setting plain text on clipboard.
+        Convenience method for storing plain text.
         """
-        self.set_data(ClipboardData(text))
+        self.set_data(ClipboardData(text=text))
 
     def rotate(self) -> None:
         """
-        For Emacs mode, rotate the kill ring.
+        Rotate clipboard history / kill ring.
+
+        Primarily used by Emacs mode.
         """
 
     @abstractmethod
     def get_data(self) -> ClipboardData:
         """
-        Return clipboard data.
+        Retrieve clipboard data.
         """
 
 
 class DummyClipboard(Clipboard):
     """
-    Clipboard implementation that doesn't remember anything.
+    Clipboard implementation that stores nothing.
     """
 
+    _EMPTY_DATA = ClipboardData()
+
     def set_data(self, data: ClipboardData) -> None:
-        pass
+        return None
 
     def set_text(self, text: str) -> None:
-        pass
+        return None
 
     def rotate(self) -> None:
-        pass
+        return None
 
     def get_data(self) -> ClipboardData:
-        return ClipboardData()
+        return self._EMPTY_DATA
 
 
 class DynamicClipboard(Clipboard):
     """
-    Clipboard class that can dynamically returns any Clipboard.
+    Clipboard wrapper that dynamically resolves another clipboard instance.
 
-    :param get_clipboard: Callable that returns a :class:`.Clipboard` instance.
+    :param get_clipboard:
+        Callable returning a :class:`.Clipboard` instance or `None`.
     """
 
-    def __init__(self, get_clipboard: Callable[[], Clipboard | None]) -> None:
+    def __init__(
+        self,
+        get_clipboard: Callable[[], Clipboard | None],
+    ) -> None:
         self.get_clipboard = get_clipboard
 
     def _clipboard(self) -> Clipboard:
+        """
+        Return the active clipboard implementation.
+        """
         return self.get_clipboard() or DummyClipboard()
 
     def set_data(self, data: ClipboardData) -> None:
