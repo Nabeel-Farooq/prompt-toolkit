@@ -9,19 +9,32 @@ from prompt_toolkit.output import DummyOutput
 
 from .application import Application
 
-__all__ = [
-    "DummyApplication",
-]
+__all__ = ["DummyApplication"]
 
 
 class DummyApplication(Application[None]):
     """
-    When no :class:`.Application` is running,
-    :func:`.get_app` will run an instance of this :class:`.DummyApplication` instead.
+    Fallback application used when no real :class:`.Application`
+    instance is currently running.
+
+    :func:`.get_app` returns this dummy implementation to provide a
+    safe placeholder object.
     """
 
+    _ERROR_MESSAGE = "A DummyApplication is not supposed to run."
+
     def __init__(self) -> None:
-        super().__init__(output=DummyOutput(), input=DummyInput())
+        super().__init__(
+            output=DummyOutput(),
+            input=DummyInput(),
+        )
+
+    @staticmethod
+    def _raise_not_supported() -> None:
+        """
+        Raise a consistent error for unsupported operations.
+        """
+        raise NotImplementedError(DummyApplication._ERROR_MESSAGE)
 
     def run(
         self,
@@ -31,7 +44,7 @@ class DummyApplication(Application[None]):
         in_thread: bool = False,
         inputhook: InputHook | None = None,
     ) -> None:
-        raise NotImplementedError("A DummyApplication is not supposed to run.")
+        self._raise_not_supported()
 
     async def run_async(
         self,
@@ -40,7 +53,7 @@ class DummyApplication(Application[None]):
         handle_sigint: bool = True,
         slow_callback_duration: float = 0.5,
     ) -> None:
-        raise NotImplementedError("A DummyApplication is not supposed to run.")
+        self._raise_not_supported()
 
     async def run_system_command(
         self,
@@ -49,7 +62,7 @@ class DummyApplication(Application[None]):
         display_before_text: AnyFormattedText = "",
         wait_text: str = "",
     ) -> None:
-        raise NotImplementedError
+        self._raise_not_supported()
 
     def suspend_to_background(self, suspend_group: bool = True) -> None:
-        raise NotImplementedError
+        self._raise_not_supported()
