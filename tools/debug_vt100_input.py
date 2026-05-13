@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 """
-Parse vt100 input and print keys.
-For testing terminal input.
+Parse VT100 input and print pressed keys.
+Useful for testing terminal input behavior.
 
-(This does not use the `Input` implementation, but only the `Vt100Parser`.)
+(This intentionally uses `Vt100Parser` directly instead of the `Input` API.)
 """
+
+from __future__ import annotations
 
 import sys
 
@@ -15,19 +17,33 @@ from prompt_toolkit.keys import Keys
 
 
 def callback(key_press: KeyPress) -> None:
+    """
+    Handle parsed key presses.
+    """
     print(key_press)
 
-    if key_press.key == Keys.ControlC:
-        sys.exit(0)
+    if key_press.key is Keys.ControlC:
+        raise SystemExit(0)
 
 
 def main() -> None:
+    """
+    Read terminal input in raw mode and feed it into the VT100 parser.
+    """
+    stdin = sys.stdin
+    fileno = stdin.fileno()
+
     stream = Vt100Parser(callback)
 
-    with raw_mode(sys.stdin.fileno()):
+    with raw_mode(fileno):
         while True:
-            c = sys.stdin.read(1)
-            stream.feed(c)
+            char = stdin.read(1)
+
+            # EOF / stream closed safeguard.
+            if not char:
+                break
+
+            stream.feed(char)
 
 
 if __name__ == "__main__":
