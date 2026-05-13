@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 """
-Read input and print keys.
-For testing terminal input.
+Read input and print pressed keys.
+Useful for testing terminal input.
 
-Works on both Windows and Posix.
+Works on both Windows and POSIX systems.
 """
+
+from __future__ import annotations
 
 import asyncio
 
@@ -13,19 +15,26 @@ from prompt_toolkit.keys import Keys
 
 
 async def main() -> None:
+    """
+    Create an input handler and continuously print pressed keys
+    until Ctrl+C is received.
+    """
     done = asyncio.Event()
     input = create_input()
 
     def keys_ready() -> None:
+        """
+        Callback executed when input is available.
+        """
         for key_press in input.read_keys():
             print(key_press)
 
-            if key_press.key == Keys.ControlC:
+            if key_press.key is Keys.ControlC:
                 done.set()
+                return
 
-    with input.raw_mode():
-        with input.attach(keys_ready):
-            await done.wait()
+    with input.raw_mode(), input.attach(keys_ready):
+        await done.wait()
 
 
 if __name__ == "__main__":
