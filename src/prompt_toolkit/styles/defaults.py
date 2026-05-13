@@ -23,7 +23,7 @@ PROMPT_TOOLKIT_STYLE = [
     # Incremental search.
     ("incsearch", ""),
     ("incsearch.current", "reverse"),
-    # Highlighting of select text in document.
+    # Highlighting of selected text in document.
     ("selected", "reverse"),
     ("cursor-column", "bg:#dddddd"),
     ("cursor-line", "underline"),
@@ -47,7 +47,7 @@ PROMPT_TOOLKIT_STYLE = [
     # Search toolbar.
     ("search-toolbar", "bold"),
     ("search-toolbar.text", "nobold"),
-    # System toolbar
+    # System toolbar.
     ("system-toolbar", "bold"),
     ("system-toolbar.text", "nobold"),
     # "arg" toolbar.
@@ -64,13 +64,12 @@ PROMPT_TOOLKIT_STYLE = [
     # Completions menu.
     ("completion-menu", "bg:#bbbbbb #000000"),
     ("completion-menu.completion", ""),
-    # (Note: for the current completion, we use 'reverse' on top of fg/bg
-    # colors. This is to have proper rendering with NO_COLOR=1).
+    # Use reverse for better NO_COLOR compatibility.
     ("completion-menu.completion.current", "fg:#888888 bg:#ffffff reverse"),
     ("completion-menu.meta.completion", "bg:#999999 #000000"),
     ("completion-menu.meta.completion.current", "bg:#aaaaaa #000000"),
     ("completion-menu.multi-column-meta", "bg:#aaaaaa #000000"),
-    # Fuzzy matches in completion menu (for FuzzyCompleter).
+    # Fuzzy matches in completion menu.
     ("completion-menu.completion fuzzymatch.outside", "fg:#444444"),
     ("completion-menu.completion fuzzymatch.inside", "bold"),
     ("completion-menu.completion fuzzymatch.inside.character", "underline"),
@@ -81,26 +80,25 @@ PROMPT_TOOLKIT_STYLE = [
     ("readline-like-completions.completion", ""),
     ("readline-like-completions.completion fuzzymatch.outside", "#888888"),
     ("readline-like-completions.completion fuzzymatch.inside", ""),
-    ("readline-like-completions.completion fuzzymatch.inside.character", "underline"),
+    (
+        "readline-like-completions.completion fuzzymatch.inside.character",
+        "underline",
+    ),
     # Scrollbars.
     ("scrollbar.background", "bg:#aaaaaa"),
     ("scrollbar.button", "bg:#444444"),
     ("scrollbar.arrow", "noinherit bold"),
-    # Start/end of scrollbars. Adding 'underline' here provides a nice little
-    # detail to the progress bar, but it doesn't look good on all terminals.
-    # ('scrollbar.start',                          'underline #ffffff'),
-    # ('scrollbar.end',                            'underline #000000'),
     # Auto suggestion text.
     ("auto-suggestion", "#666666"),
     # Trailing whitespace and tabs.
     ("trailing-whitespace", "#999999"),
     ("tab", "#999999"),
-    # When Control-C/D has been pressed. Grayed.
+    # When Control-C/D has been pressed.
     ("aborting", "#888888 bg:default noreverse noitalic nounderline noblink"),
     ("exiting", "#888888 bg:default noreverse noitalic nounderline noblink"),
     # Entering a Vi digraph.
     ("digraph", "#4444ff"),
-    # Control characters, like ^C, ^X.
+    # Control characters.
     ("control-character", "ansiblue"),
     # Non-breaking space.
     ("nbsp", "underline ansiyellow"),
@@ -113,8 +111,7 @@ PROMPT_TOOLKIT_STYLE = [
     ("strong", "bold"),
     ("del", "strike"),
     ("hidden", "hidden"),
-    # It should be possible to use the style names in HTML.
-    # <reverse>...</reverse>  or <noreverse>...</noreverse>.
+    # Style names usable in HTML.
     ("italic", "italic"),
     ("underline", "underline"),
     ("strike", "strike"),
@@ -125,14 +122,15 @@ PROMPT_TOOLKIT_STYLE = [
     ("nostrike", "nostrike"),
     ("nobold", "nobold"),
     ("noreverse", "noreverse"),
-    # Prompt bottom toolbar
+    # Bottom toolbar.
     ("bottom-toolbar", "reverse"),
 ]
 
 
-# Style that will turn for instance the class 'red' into 'red'.
-COLORS_STYLE = [(name, "fg:" + name) for name in ANSI_COLOR_NAMES] + [
-    (name.lower(), "fg:" + name) for name in NAMED_COLORS
+# Style that maps class names directly to foreground colors.
+COLORS_STYLE = [
+    *( (name, f"fg:{name}") for name in ANSI_COLOR_NAMES ),
+    *( (name.lower(), f"fg:{name}") for name in NAMED_COLORS ),
 ]
 
 
@@ -167,8 +165,7 @@ WIDGETS_STYLE = [
 ]
 
 
-# The default Pygments style, include this by default in case a Pygments lexer
-# is used.
+# Default Pygments style.
 PYGMENTS_DEFAULT_STYLE = {
     "pygments.whitespace": "#bbbbbb",
     "pygments.comment": "italic #408080",
@@ -190,8 +187,6 @@ PYGMENTS_DEFAULT_STYLE = {
     "pygments.name.attribute": "#7d9029",
     "pygments.name.tag": "bold #008000",
     "pygments.name.decorator": "#aa22ff",
-    # Note: In Pygments, Token.String is an alias for Token.Literal.String,
-    #       and Token.Number as an alias for Token.Literal.Number.
     "pygments.literal.string": "#ba2121",
     "pygments.literal.string.doc": "italic",
     "pygments.literal.string.interpol": "bold #bb6688",
@@ -217,7 +212,7 @@ PYGMENTS_DEFAULT_STYLE = {
 @memoized()
 def default_ui_style() -> BaseStyle:
     """
-    Create a default `Style` object.
+    Create the default UI style.
     """
     return merge_styles(
         [
@@ -231,6 +226,6 @@ def default_ui_style() -> BaseStyle:
 @memoized()
 def default_pygments_style() -> Style:
     """
-    Create a `Style` object that contains the default Pygments style.
+    Create the default Pygments style.
     """
     return Style.from_dict(PYGMENTS_DEFAULT_STYLE)
