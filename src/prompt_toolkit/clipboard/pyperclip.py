@@ -13,30 +13,42 @@ __all__ = [
 
 class PyperclipClipboard(Clipboard):
     """
-    Clipboard that synchronizes with the Windows/Mac/Linux system clipboard,
-    using the pyperclip module.
+    Clipboard implementation that synchronizes with the system clipboard
+    using the `pyperclip` module.
+
+    Supports Windows, macOS, and Linux.
     """
 
     def __init__(self) -> None:
+        # Cache the most recently copied ClipboardData instance so we can
+        # preserve SelectionType metadata when possible.
         self._data: ClipboardData | None = None
 
     def set_data(self, data: ClipboardData) -> None:
+        """
+        Store clipboard data locally and sync it to the system clipboard.
+        """
         self._data = data
         pyperclip.copy(data.text)
 
     def get_data(self) -> ClipboardData:
+        """
+        Retrieve clipboard data from the system clipboard.
+        """
         text = pyperclip.paste()
 
-        # When the clipboard data is equal to what we copied last time, reuse
-        # the `ClipboardData` instance. That way we're sure to keep the same
-        # `SelectionType`.
-        if self._data and self._data.text == text:
+        # Reuse cached ClipboardData to preserve SelectionType metadata.
+        if self._data is not None and self._data.text == text:
             return self._data
 
-        # Pyperclip returned something else. Create a new `ClipboardData`
-        # instance.
-        else:
-            return ClipboardData(
-                text=text,
-                type=SelectionType.LINES if "\n" in text else SelectionType.CHARACTERS,
-            )
+        # Infer selection type from clipboard content.
+        selection_type = (
+            SelectionType.LINES
+            if "\n" in text
+            else SelectionType.CHARACTERS
+        )
+
+        return ClipboardData(
+            text=text,
+            type=selection_type,
+        )
