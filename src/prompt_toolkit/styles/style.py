@@ -1,5 +1,5 @@
 """
-Tool for creating styles from a dictionary.
+Tools for creating styles from dictionaries.
 """
 
 from __future__ import annotations
@@ -28,57 +28,66 @@ __all__ = [
     "merge_styles",
 ]
 
-_named_colors_lowercase = {k.lower(): v.lstrip("#") for k, v in NAMED_COLORS.items()}
+
+_named_colors_lowercase = {
+    key.lower(): value.lstrip("#")
+    for key, value in NAMED_COLORS.items()
+}
 
 
 def parse_color(text: str) -> str:
     """
-    Parse/validate color format.
+    Parse and validate a color string.
 
-    Like in Pygments, but also support the ANSI color names.
-    (These will map to the colors of the 16 color palette.)
+    Supports:
+    - ANSI color names
+    - Named CSS colors
+    - 3/6 digit hex colors
+    - "default" / empty string
     """
-    # ANSI color names.
+    if not text:
+        return ""
+
+    # ANSI colors.
     if text in ANSI_COLOR_NAMES:
         return text
-    if text in ANSI_COLOR_NAMES_ALIASES:
-        return ANSI_COLOR_NAMES_ALIASES[text]
 
-    # 140 named colors.
-    try:
-        # Replace by 'hex' value.
-        return _named_colors_lowercase[text.lower()]
-    except KeyError:
-        pass
+    alias = ANSI_COLOR_NAMES_ALIASES.get(text)
 
-    # Hex codes.
-    if text[0:1] == "#":
+    if alias is not None:
+        return alias
+
+    # Named colors.
+    named = _named_colors_lowercase.get(text.lower())
+
+    if named is not None:
+        return named
+
+    # Hex colors.
+    if text.startswith("#"):
         col = text[1:]
 
-        # Keep this for backwards-compatibility (Pygments does it).
-        # I don't like the '#' prefix for named colors.
         if col in ANSI_COLOR_NAMES:
             return col
-        elif col in ANSI_COLOR_NAMES_ALIASES:
-            return ANSI_COLOR_NAMES_ALIASES[col]
 
-        # 6 digit hex color.
-        elif len(col) == 6:
+        alias = ANSI_COLOR_NAMES_ALIASES.get(col)
+
+        if alias is not None:
+            return alias
+
+        if len(col) == 6:
             return col
 
-        # 3 digit hex color.
-        elif len(col) == 3:
-            return col[0] * 2 + col[1] * 2 + col[2] * 2
+        if len(col) == 3:
+            return "".join(char * 2 for char in col)
 
-    # Default.
-    elif text in ("", "default"):
+    elif text == "default":
         return text
 
     raise ValueError(f"Wrong color format {text!r}")
 
 
-# Attributes, when they are not filled in by a style. None means that we take
-# the value from the parent.
+# Attributes with undefined values.
 _EMPTY_ATTRS = Attrs(
     color=None,
     bgcolor=None,
@@ -95,156 +104,134 @@ _EMPTY_ATTRS = Attrs(
 
 def _expand_classname(classname: str) -> list[str]:
     """
-    Split a single class name at the `.` operator, and build a list of classes.
+    Expand hierarchical class names.
 
-    E.g. 'a.b.c' becomes ['a', 'a.b', 'a.b.c']
+    Example:
+        "a.b.c" -> ["a", "a.b", "a.b.c"]
     """
-    result = []
     parts = classname.split(".")
 
-    for i in range(1, len(parts) + 1):
-        result.append(".".join(parts[:i]).lower())
-
-    return result
+    return [
+        ".".join(parts[:index]).lower()
+        for index in range(1, len(parts) + 1)
+    ]
 
 
 def _parse_style_str(style_str: str) -> Attrs:
     """
-    Take a style string, e.g.  'bg:red #88ff00 class:title'
-    and return a `Attrs` instance.
+    Parse a style string into an :class:`Attrs` object.
     """
-    # Start from default Attrs.
-    if "noinherit" in style_str:
-        attrs = DEFAULT_ATTRS
-    else:
-        attrs = _EMPTY_ATTRS
+    attrs = DEFAULT_ATTRS if "noinherit" in style_str else _EMPTY_ATTRS
 
-    # Now update with the given attributes.
+    replacements = {
+        "bold": ("bold", True),
+        "nobold": ("bold", False),
+        "italic": ("italic", True),
+        "noitalic": ("italic", False),
+        "underline": ("underline", True),
+        "nounderline": ("underline", False),
+        "strike": ("strike", True),
+        "nostrike": ("strike", False),
+        "blink": ("blink", True),
+        "noblink": ("blink", False),
+        "reverse": ("reverse", True),
+        "noreverse": ("reverse", False),
+        "hidden": ("hidden", True),
+        "nohidden": ("hidden", False),
+        "dim": ("dim", True),
+        "nodim": ("dim", False),
+    }
+
+    ignored_parts = {
+        "roman",
+        "sans",
+        "mono",
+    }
+
     for part in style_str.split():
         if part == "noinherit":
-            pass
-        elif part == "bold":
-            attrs = attrs._replace(bold=True)
-        elif part == "nobold":
-            attrs = attrs._replace(bold=False)
-        elif part == "italic":
-            attrs = attrs._replace(italic=True)
-        elif part == "noitalic":
-            attrs = attrs._replace(italic=False)
-        elif part == "underline":
-            attrs = attrs._replace(underline=True)
-        elif part == "nounderline":
-            attrs = attrs._replace(underline=False)
-        elif part == "strike":
-            attrs = attrs._replace(strike=True)
-        elif part == "nostrike":
-            attrs = attrs._replace(strike=False)
+            continue
 
-        # prompt_toolkit extensions. Not in Pygments.
-        elif part == "blink":
-            attrs = attrs._replace(blink=True)
-        elif part == "noblink":
-            attrs = attrs._replace(blink=False)
-        elif part == "reverse":
-            attrs = attrs._replace(reverse=True)
-        elif part == "noreverse":
-            attrs = attrs._replace(reverse=False)
-        elif part == "hidden":
-            attrs = attrs._replace(hidden=True)
-        elif part == "nohidden":
-            attrs = attrs._replace(hidden=False)
-        elif part == "dim":
-            attrs = attrs._replace(dim=True)
-        elif part == "nodim":
-            attrs = attrs._replace(dim=False)
+        replacement = replacements.get(part)
 
-        # Pygments properties that we ignore.
-        elif part in ("roman", "sans", "mono"):
-            pass
-        elif part.startswith("border:"):
-            pass
+        if replacement is not None:
+            field, value = replacement
+            attrs = attrs._replace(**{field: value})
+            continue
 
-        # Ignore pieces in between square brackets. This is internal stuff.
-        # Like '[transparent]' or '[set-cursor-position]'.
-        elif part.startswith("[") and part.endswith("]"):
-            pass
+        # Ignored pygments properties.
+        if part in ignored_parts or part.startswith("border:"):
+            continue
 
-        # Colors.
-        elif part.startswith("bg:"):
-            attrs = attrs._replace(bgcolor=parse_color(part[3:]))
-        elif part.startswith("fg:"):  # The 'fg:' prefix is optional.
-            attrs = attrs._replace(color=parse_color(part[3:]))
-        else:
-            attrs = attrs._replace(color=parse_color(part))
+        # Ignore internal metadata.
+        if part.startswith("[") and part.endswith("]"):
+            continue
+
+        # Background color.
+        if part.startswith("bg:"):
+            attrs = attrs._replace(
+                bgcolor=parse_color(part[3:])
+            )
+            continue
+
+        # Foreground color.
+        if part.startswith("fg:"):
+            attrs = attrs._replace(
+                color=parse_color(part[3:])
+            )
+            continue
+
+        # Shorthand foreground color.
+        attrs = attrs._replace(color=parse_color(part))
 
     return attrs
 
 
-CLASS_NAMES_RE = re.compile(r"^[a-z0-9.\s_-]*$")  # This one can't contain a comma!
+CLASS_NAMES_RE = re.compile(r"^[a-z0-9.\s_-]*$")
 
 
 class Priority(Enum):
     """
-    The priority of the rules, when a style is created from a dictionary.
-
-    In a `Style`, rules that are defined later will always override previous
-    defined rules, however in a dictionary, the key order was arbitrary before
-    Python 3.6. This means that the style could change at random between rules.
-
-    We have two options:
-
-    - `DICT_KEY_ORDER`: This means, iterate through the dictionary, and take
-       the key/value pairs in order as they come. This is a good option if you
-       have Python >3.6. Rules at the end will override rules at the beginning.
-    - `MOST_PRECISE`: keys that are defined with most precision will get higher
-      priority. (More precise means: more elements.)
+    Style rule priority strategy.
     """
 
     DICT_KEY_ORDER = "KEY_ORDER"
     MOST_PRECISE = "MOST_PRECISE"
 
 
-# We don't support Python versions older than 3.6 anymore, so we can always
-# depend on dictionary ordering. This is the default.
 default_priority = Priority.DICT_KEY_ORDER
 
 
 class Style(BaseStyle):
     """
-    Create a ``Style`` instance from a list of style rules.
-
-    The `style_rules` is supposed to be a list of ('classnames', 'style') tuples.
-    The classnames are a whitespace separated string of class names and the
-    style string is just like a Pygments style definition, but with a few
-    additions: it supports 'reverse' and 'blink'.
-
-    Later rules always override previous rules.
-
-    Usage::
-
-        Style([
-            ('title', '#ff0000 bold underline'),
-            ('something-else', 'reverse'),
-            ('class1 class2', 'reverse'),
-        ])
-
-    The ``from_dict`` classmethod is similar, but takes a dictionary as input.
+    Style implementation based on style rules.
     """
 
-    def __init__(self, style_rules: list[tuple[str, str]]) -> None:
-        class_names_and_attrs = []
+    __slots__ = (
+        "_style_rules",
+        "class_names_and_attrs",
+    )
 
-        # Loop through the rules in the order they were defined.
-        # Rules that are defined later get priority.
+    def __init__(
+        self,
+        style_rules: list[tuple[str, str]],
+    ) -> None:
+        class_names_and_attrs: list[
+            tuple[frozenset[str], Attrs]
+        ] = []
+
         for class_names, style_str in style_rules:
-            assert CLASS_NAMES_RE.match(class_names), repr(class_names)
+            if not CLASS_NAMES_RE.match(class_names):
+                raise ValueError(repr(class_names))
 
-            # The order of the class names doesn't matter.
-            # (But the order of rules does matter.)
-            class_names_set = frozenset(class_names.lower().split())
             attrs = _parse_style_str(style_str)
 
-            class_names_and_attrs.append((class_names_set, attrs))
+            class_names_and_attrs.append(
+                (
+                    frozenset(class_names.lower().split()),
+                    attrs,
+                )
+            )
 
         self._style_rules = style_rules
         self.class_names_and_attrs = class_names_and_attrs
@@ -255,68 +242,83 @@ class Style(BaseStyle):
 
     @classmethod
     def from_dict(
-        cls, style_dict: dict[str, str], priority: Priority = default_priority
+        cls,
+        style_dict: dict[str, str],
+        priority: Priority = default_priority,
     ) -> Style:
         """
-        :param style_dict: Style dictionary.
-        :param priority: `Priority` value.
+        Create a style from a dictionary.
         """
         if priority == Priority.MOST_PRECISE:
 
             def key(item: tuple[str, str]) -> int:
-                # Split on '.' and whitespace. Count elements.
-                return sum(len(i.split(".")) for i in item[0].split())
+                return sum(
+                    len(part.split("."))
+                    for part in item[0].split()
+                )
 
-            return cls(sorted(style_dict.items(), key=key))
-        else:
-            return cls(list(style_dict.items()))
+            return cls(
+                sorted(
+                    style_dict.items(),
+                    key=key,
+                )
+            )
+
+        return cls(list(style_dict.items()))
 
     def get_attrs_for_style_str(
-        self, style_str: str, default: Attrs = DEFAULT_ATTRS
+        self,
+        style_str: str,
+        default: Attrs = DEFAULT_ATTRS,
     ) -> Attrs:
         """
-        Get `Attrs` for the given style string.
+        Resolve attributes for a style string.
         """
-        list_of_attrs = [default]
+        list_of_attrs: list[Attrs] = [default]
+
         class_names: set[str] = set()
 
-        # Apply default styling.
+        # Apply global/default rules.
         for names, attr in self.class_names_and_attrs:
             if not names:
                 list_of_attrs.append(attr)
 
-        # Go from left to right through the style string. Things on the right
-        # take precedence.
         for part in style_str.split():
-            # This part represents a class.
-            # Do lookup of this class name in the style definition, as well
-            # as all class combinations that we have so far.
             if part.startswith("class:"):
-                # Expand all class names (comma separated list).
-                new_class_names = []
-                for p in part[6:].lower().split(","):
-                    new_class_names.extend(_expand_classname(p))
+                new_class_names: list[str] = []
+
+                for item in part[6:].lower().split(","):
+                    new_class_names.extend(
+                        _expand_classname(item)
+                    )
 
                 for new_name in new_class_names:
-                    # Build a set of all possible class combinations to be applied.
-                    combos = set()
-                    combos.add(frozenset([new_name]))
+                    combos = {
+                        frozenset([new_name]),
+                    }
 
-                    for count in range(1, len(class_names) + 1):
-                        for c2 in itertools.combinations(class_names, count):
-                            combos.add(frozenset(c2 + (new_name,)))
+                    for count in range(
+                        1,
+                        len(class_names) + 1,
+                    ):
+                        combos.update(
+                            frozenset(combo + (new_name,))
+                            for combo in itertools.combinations(
+                                class_names,
+                                count,
+                            )
+                        )
 
-                    # Apply the styles that match these class names.
                     for names, attr in self.class_names_and_attrs:
                         if names in combos:
                             list_of_attrs.append(attr)
 
                     class_names.add(new_name)
 
-            # Process inline style.
             else:
-                inline_attrs = _parse_style_str(part)
-                list_of_attrs.append(inline_attrs)
+                list_of_attrs.append(
+                    _parse_style_str(part)
+                )
 
         return _merge_attrs(list_of_attrs)
 
@@ -329,80 +331,132 @@ _T = TypeVar("_T")
 
 def _merge_attrs(list_of_attrs: list[Attrs]) -> Attrs:
     """
-    Take a list of :class:`.Attrs` instances and merge them into one.
-    Every `Attr` in the list can override the styling of the previous one. So,
-    the last one has highest priority.
+    Merge multiple :class:`Attrs` objects.
     """
 
     def _or(*values: _T) -> _T:
-        "Take first not-None value, starting at the end."
-        for v in values[::-1]:
-            if v is not None:
-                return v
-        raise ValueError  # Should not happen, there's always one non-null value.
+        """
+        Return the last non-None value.
+        """
+        for value in reversed(values):
+            if value is not None:
+                return value
+
+        raise ValueError(
+            "Expected at least one non-None value."
+        )
 
     return Attrs(
-        color=_or("", *[a.color for a in list_of_attrs]),
-        bgcolor=_or("", *[a.bgcolor for a in list_of_attrs]),
-        bold=_or(False, *[a.bold for a in list_of_attrs]),
-        underline=_or(False, *[a.underline for a in list_of_attrs]),
-        strike=_or(False, *[a.strike for a in list_of_attrs]),
-        italic=_or(False, *[a.italic for a in list_of_attrs]),
-        blink=_or(False, *[a.blink for a in list_of_attrs]),
-        reverse=_or(False, *[a.reverse for a in list_of_attrs]),
-        hidden=_or(False, *[a.hidden for a in list_of_attrs]),
-        dim=_or(False, *[a.dim for a in list_of_attrs]),
+        color=_or(
+            "",
+            *(attr.color for attr in list_of_attrs),
+        ),
+        bgcolor=_or(
+            "",
+            *(attr.bgcolor for attr in list_of_attrs),
+        ),
+        bold=_or(
+            False,
+            *(attr.bold for attr in list_of_attrs),
+        ),
+        underline=_or(
+            False,
+            *(attr.underline for attr in list_of_attrs),
+        ),
+        strike=_or(
+            False,
+            *(attr.strike for attr in list_of_attrs),
+        ),
+        italic=_or(
+            False,
+            *(attr.italic for attr in list_of_attrs),
+        ),
+        blink=_or(
+            False,
+            *(attr.blink for attr in list_of_attrs),
+        ),
+        reverse=_or(
+            False,
+            *(attr.reverse for attr in list_of_attrs),
+        ),
+        hidden=_or(
+            False,
+            *(attr.hidden for attr in list_of_attrs),
+        ),
+        dim=_or(
+            False,
+            *(attr.dim for attr in list_of_attrs),
+        ),
     )
 
 
-def merge_styles(styles: list[BaseStyle]) -> _MergedStyle:
+def merge_styles(
+    styles: list[BaseStyle],
+) -> _MergedStyle:
     """
-    Merge multiple `Style` objects.
+    Merge multiple styles into one.
     """
-    styles = [s for s in styles if s is not None]
-    return _MergedStyle(styles)
+    return _MergedStyle(
+        [style for style in styles if style is not None]
+    )
 
 
 class _MergedStyle(BaseStyle):
     """
-    Merge multiple `Style` objects into one.
-    This is supposed to ensure consistency: if any of the given styles changes,
-    then this style will be updated.
+    Dynamically merged style wrapper.
     """
 
-    # NOTE: previously, we used an algorithm where we did not generate the
-    #       combined style. Instead this was a proxy that called one style
-    #       after the other, passing the outcome of the previous style as the
-    #       default for the next one. This did not work, because that way, the
-    #       priorities like described in the `Style` class don't work.
-    #       'class:aborted' was for instance never displayed in gray, because
-    #       the next style specified a default color for any text. (The
-    #       explicit styling of class:aborted should have taken priority,
-    #       because it was more precise.)
-    def __init__(self, styles: list[BaseStyle]) -> None:
+    __slots__ = (
+        "styles",
+        "_style",
+    )
+
+    def __init__(
+        self,
+        styles: list[BaseStyle],
+    ) -> None:
         self.styles = styles
-        self._style: SimpleCache[Hashable, Style] = SimpleCache(maxsize=1)
+
+        self._style: SimpleCache[
+            Hashable,
+            Style,
+        ] = SimpleCache(maxsize=1)
 
     @property
     def _merged_style(self) -> Style:
-        "The `Style` object that has the other styles merged together."
+        """
+        Cached merged style instance.
+        """
 
         def get() -> Style:
             return Style(self.style_rules)
 
-        return self._style.get(self.invalidation_hash(), get)
+        return self._style.get(
+            self.invalidation_hash(),
+            get,
+        )
 
     @property
     def style_rules(self) -> list[tuple[str, str]]:
-        style_rules = []
-        for s in self.styles:
-            style_rules.extend(s.style_rules)
+        style_rules: list[tuple[str, str]] = []
+
+        for style in self.styles:
+            style_rules.extend(style.style_rules)
+
         return style_rules
 
     def get_attrs_for_style_str(
-        self, style_str: str, default: Attrs = DEFAULT_ATTRS
+        self,
+        style_str: str,
+        default: Attrs = DEFAULT_ATTRS,
     ) -> Attrs:
-        return self._merged_style.get_attrs_for_style_str(style_str, default)
+        return self._merged_style.get_attrs_for_style_str(
+            style_str,
+            default,
+        )
 
     def invalidation_hash(self) -> Hashable:
-        return tuple(s.invalidation_hash() for s in self.styles)
+        return tuple(
+            style.invalidation_hash()
+            for style in self.styles
+        )
