@@ -1,5 +1,5 @@
 """
-The base classes for the styling.
+Base classes and utilities for styling.
 """
 
 from __future__ import annotations
@@ -19,8 +19,32 @@ __all__ = [
 ]
 
 
-#: Style attributes.
 class Attrs(NamedTuple):
+    """
+    Style attributes.
+
+    :param color:
+        Hexadecimal foreground color or ANSI color name.
+    :param bgcolor:
+        Hexadecimal background color or ANSI color name.
+    :param bold:
+        Bold text.
+    :param underline:
+        Underlined text.
+    :param strike:
+        Strikethrough text.
+    :param italic:
+        Italic text.
+    :param blink:
+        Blinking text.
+    :param reverse:
+        Reverse foreground/background colors.
+    :param hidden:
+        Hidden text.
+    :param dim:
+        Dimmed text.
+    """
+
     color: str | None
     bgcolor: str | None
     bold: bool | None
@@ -33,20 +57,7 @@ class Attrs(NamedTuple):
     dim: bool | None
 
 
-"""
-:param color: Hexadecimal string. E.g. '000000' or Ansi color name: e.g. 'ansiblue'
-:param bgcolor: Hexadecimal string. E.g. 'ffffff' or Ansi color name: e.g. 'ansired'
-:param bold: Boolean
-:param underline: Boolean
-:param strike: Boolean
-:param italic: Boolean
-:param blink: Boolean
-:param reverse: Boolean
-:param hidden: Boolean
-:param dim: Boolean
-"""
-
-#: The default `Attrs`.
+#: Default attribute set.
 DEFAULT_ATTRS = Attrs(
     color="",
     bgcolor="",
@@ -61,14 +72,10 @@ DEFAULT_ATTRS = Attrs(
 )
 
 
-#: ``Attrs.bgcolor/fgcolor`` can be in either 'ffffff' format, or can be any of
-#: the following in case we want to take colors from the 8/16 color palette.
-#: Usually, in that case, the terminal application allows to configure the RGB
-#: values for these names.
-#: ISO 6429 colors
+#: Supported ANSI color names.
 ANSI_COLOR_NAMES = [
     "ansidefault",
-    # Low intensity, dark.  (One or two components 0x80, the other 0x00.)
+    # Low intensity colors.
     "ansiblack",
     "ansired",
     "ansigreen",
@@ -77,7 +84,7 @@ ANSI_COLOR_NAMES = [
     "ansimagenta",
     "ansicyan",
     "ansigray",
-    # High intensity, bright. (One or two components 0xff, the other 0x00. Not supported everywhere.)
+    # Bright colors.
     "ansibrightblack",
     "ansibrightred",
     "ansibrightgreen",
@@ -89,11 +96,7 @@ ANSI_COLOR_NAMES = [
 ]
 
 
-# People don't use the same ANSI color names everywhere. In prompt_toolkit 1.0
-# we used some unconventional names (which were contributed like that to
-# Pygments). This is fixed now, but we still support the old names.
-
-# The table below maps the old aliases to the current names.
+#: Legacy ANSI color aliases.
 ANSI_COLOR_NAMES_ALIASES: dict[str, str] = {
     "ansidarkgray": "ansibrightblack",
     "ansiteal": "ansicyan",
@@ -106,8 +109,14 @@ ANSI_COLOR_NAMES_ALIASES: dict[str, str] = {
     "ansidarkgreen": "ansigreen",
     "ansidarkblue": "ansiblue",
 }
-assert set(ANSI_COLOR_NAMES_ALIASES.values()).issubset(set(ANSI_COLOR_NAMES))
-assert not (set(ANSI_COLOR_NAMES_ALIASES.keys()) & set(ANSI_COLOR_NAMES))
+
+assert set(ANSI_COLOR_NAMES_ALIASES.values()).issubset(
+    ANSI_COLOR_NAMES
+)
+
+assert not (
+    set(ANSI_COLOR_NAMES_ALIASES) & set(ANSI_COLOR_NAMES)
+)
 
 
 class BaseStyle(metaclass=ABCMeta):
@@ -117,46 +126,53 @@ class BaseStyle(metaclass=ABCMeta):
 
     @abstractmethod
     def get_attrs_for_style_str(
-        self, style_str: str, default: Attrs = DEFAULT_ATTRS
+        self,
+        style_str: str,
+        default: Attrs = DEFAULT_ATTRS,
     ) -> Attrs:
         """
-        Return :class:`.Attrs` for the given style string.
+        Return :class:`Attrs` for the given style string.
 
-        :param style_str: The style string. This can contain inline styling as
-            well as classnames (e.g. "class:title").
-        :param default: `Attrs` to be used if no styling was defined.
+        :param style_str:
+            Style definition string.
+        :param default:
+            Fallback attributes when no style matches.
         """
 
     @property
     @abstractmethod
     def style_rules(self) -> list[tuple[str, str]]:
         """
-        The list of style rules, used to create this style.
-        (Required for `DynamicStyle` and `_MergedStyle` to work.)
+        Style rules used to create this style.
         """
         return []
 
     @abstractmethod
     def invalidation_hash(self) -> Hashable:
         """
-        Invalidation hash for the style. When this changes over time, the
-        renderer knows that something in the style changed, and that everything
-        has to be redrawn.
+        Return a hash used for renderer cache invalidation.
         """
 
 
 class DummyStyle(BaseStyle):
     """
-    A style that doesn't style anything.
+    Style implementation that applies no styling.
     """
 
+    __slots__ = ()
+
     def get_attrs_for_style_str(
-        self, style_str: str, default: Attrs = DEFAULT_ATTRS
+        self,
+        style_str: str,
+        default: Attrs = DEFAULT_ATTRS,
     ) -> Attrs:
         return default
 
     def invalidation_hash(self) -> Hashable:
-        return 1  # Always the same value.
+        """
+        Constant invalidation hash.
+        """
+        return 1
 
     @property
     def style_rules(self) -> list[tuple[str, str]]:
@@ -165,25 +181,40 @@ class DummyStyle(BaseStyle):
 
 class DynamicStyle(BaseStyle):
     """
-    Style class that can dynamically returns an other Style.
+    Style wrapper that dynamically resolves another style.
 
-    :param get_style: Callable that returns a :class:`.Style` instance.
+    :param get_style:
+        Callable returning a :class:`BaseStyle` instance.
     """
 
-    def __init__(self, get_style: Callable[[], BaseStyle | None]):
+    __slots__ = ("get_style", "_dummy")
+
+    def __init__(
+        self,
+        get_style: Callable[[], BaseStyle | None],
+    ) -> None:
         self.get_style = get_style
         self._dummy = DummyStyle()
 
-    def get_attrs_for_style_str(
-        self, style_str: str, default: Attrs = DEFAULT_ATTRS
-    ) -> Attrs:
-        style = self.get_style() or self._dummy
+    def _style(self) -> BaseStyle:
+        """
+        Return the active style or fallback dummy style.
+        """
+        return self.get_style() or self._dummy
 
-        return style.get_attrs_for_style_str(style_str, default)
+    def get_attrs_for_style_str(
+        self,
+        style_str: str,
+        default: Attrs = DEFAULT_ATTRS,
+    ) -> Attrs:
+        return self._style().get_attrs_for_style_str(
+            style_str,
+            default,
+        )
 
     def invalidation_hash(self) -> Hashable:
-        return (self.get_style() or self._dummy).invalidation_hash()
+        return self._style().invalidation_hash()
 
     @property
     def style_rules(self) -> list[tuple[str, str]]:
-        return (self.get_style() or self._dummy).style_rules
+        return self._style().style_rules
