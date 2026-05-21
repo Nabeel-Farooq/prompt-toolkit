@@ -1,6 +1,26 @@
 from __future__ import annotations
 
+import pytest
+
 from prompt_toolkit.styles import Attrs, Style, SwapLightAndDarkStyleTransformation
+
+
+def attrs(**kwargs) -> Attrs:
+    """Helper to reduce boilerplate in Attrs creation."""
+    defaults = dict(
+        color="",
+        bgcolor="",
+        bold=False,
+        underline=False,
+        strike=False,
+        italic=False,
+        blink=False,
+        reverse=False,
+        hidden=False,
+        dim=False,
+    )
+    defaults.update(kwargs)
+    return Attrs(**defaults)
 
 
 def test_style_from_dict():
@@ -11,84 +31,43 @@ def test_style_from_dict():
         }
     )
 
-    # Lookup of class:a.
-    expected = Attrs(
+    assert style.get_attrs_for_style_str("class:a") == attrs(
         color="ff0000",
-        bgcolor="",
         bold=True,
         underline=True,
         strike=True,
         italic=True,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
     )
-    assert style.get_attrs_for_style_str("class:a") == expected
 
-    # Lookup of class:b.
-    expected = Attrs(
-        color="",
+    assert style.get_attrs_for_style_str("class:b") == attrs(
         bgcolor="00ff00",
-        bold=False,
-        underline=False,
-        strike=False,
-        italic=False,
         blink=True,
         reverse=True,
-        hidden=False,
-        dim=False,
     )
-    assert style.get_attrs_for_style_str("class:b") == expected
 
-    # Test inline style.
-    expected = Attrs(
+    # Inline style overrides class
+    assert style.get_attrs_for_style_str("#ff0000") == attrs(
         color="ff0000",
-        bgcolor="",
-        bold=False,
-        underline=False,
-        strike=False,
-        italic=False,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
     )
-    assert style.get_attrs_for_style_str("#ff0000") == expected
 
-    # Combine class name and inline style (Whatever is defined later gets priority.)
-    expected = Attrs(
+    assert style.get_attrs_for_style_str("class:a #00ff00") == attrs(
         color="00ff00",
-        bgcolor="",
         bold=True,
         underline=True,
         strike=True,
         italic=True,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
     )
-    assert style.get_attrs_for_style_str("class:a #00ff00") == expected
 
-    expected = Attrs(
+    assert style.get_attrs_for_style_str("#00ff00 class:a") == attrs(
         color="ff0000",
-        bgcolor="",
         bold=True,
         underline=True,
         strike=True,
         italic=True,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
     )
-    assert style.get_attrs_for_style_str("#00ff00 class:a") == expected
 
 
 def test_class_combinations_1():
-    # In this case, our style has both class 'a' and 'b'.
-    # Given that the style for 'a b' is defined at the end, that one is used.
     style = Style(
         [
             ("a", "#0000ff"),
@@ -96,30 +75,20 @@ def test_class_combinations_1():
             ("a b", "#ff0000"),
         ]
     )
-    expected = Attrs(
-        color="ff0000",
-        bgcolor="",
-        bold=False,
-        underline=False,
-        strike=False,
-        italic=False,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
-    )
-    assert style.get_attrs_for_style_str("class:a class:b") == expected
-    assert style.get_attrs_for_style_str("class:a,b") == expected
-    assert style.get_attrs_for_style_str("class:a,b,c") == expected
 
-    # Changing the order shouldn't matter.
-    assert style.get_attrs_for_style_str("class:b class:a") == expected
-    assert style.get_attrs_for_style_str("class:b,a") == expected
+    expected = attrs(color="ff0000")
+
+    for s in [
+        "class:a class:b",
+        "class:a,b",
+        "class:a,b,c",
+        "class:b class:a",
+        "class:b,a",
+    ]:
+        assert style.get_attrs_for_style_str(s) == expected
 
 
 def test_class_combinations_2():
-    # In this case, our style has both class 'a' and 'b'.
-    # The style that is defined the latest get priority.
     style = Style(
         [
             ("a b", "#ff0000"),
@@ -127,37 +96,13 @@ def test_class_combinations_2():
             ("a", "#0000ff"),
         ]
     )
-    expected = Attrs(
-        color="00ff00",
-        bgcolor="",
-        bold=False,
-        underline=False,
-        strike=False,
-        italic=False,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
-    )
-    assert style.get_attrs_for_style_str("class:a class:b") == expected
-    assert style.get_attrs_for_style_str("class:a,b") == expected
-    assert style.get_attrs_for_style_str("class:a,b,c") == expected
 
-    # Defining 'a' latest should give priority to 'a'.
-    expected = Attrs(
-        color="0000ff",
-        bgcolor="",
-        bold=False,
-        underline=False,
-        strike=False,
-        italic=False,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
-    )
-    assert style.get_attrs_for_style_str("class:b class:a") == expected
-    assert style.get_attrs_for_style_str("class:b,a") == expected
+    assert style.get_attrs_for_style_str("class:a class:b") == attrs(color="00ff00")
+    assert style.get_attrs_for_style_str("class:a,b") == attrs(color="00ff00")
+    assert style.get_attrs_for_style_str("class:a,b,c") == attrs(color="00ff00")
+
+    assert style.get_attrs_for_style_str("class:b class:a") == attrs(color="0000ff")
+    assert style.get_attrs_for_style_str("class:b,a") == attrs(color="0000ff")
 
 
 def test_substyles():
@@ -170,72 +115,32 @@ def test_substyles():
         ]
     )
 
-    # Starting with a.*
-    expected = Attrs(
-        color="0000ff",
-        bgcolor="",
-        bold=False,
-        underline=False,
-        strike=False,
-        italic=False,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
-    )
-    assert style.get_attrs_for_style_str("class:a") == expected
-
-    expected = Attrs(
+    assert style.get_attrs_for_style_str("class:a") == attrs(color="0000ff")
+    assert style.get_attrs_for_style_str("class:a.b") == attrs(
         color="ff0000",
-        bgcolor="",
         bold=True,
-        underline=False,
-        strike=False,
-        italic=False,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
     )
-    assert style.get_attrs_for_style_str("class:a.b") == expected
-    assert style.get_attrs_for_style_str("class:a.b.c") == expected
-
-    # Starting with b.*
-    expected = Attrs(
-        color="00ff00",
-        bgcolor="",
-        bold=False,
-        underline=False,
-        strike=False,
-        italic=False,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
+    assert style.get_attrs_for_style_str("class:a.b.c") == attrs(
+        color="ff0000",
+        bold=True,
     )
-    assert style.get_attrs_for_style_str("class:b") == expected
-    assert style.get_attrs_for_style_str("class:b.a") == expected
 
-    expected = Attrs(
+    assert style.get_attrs_for_style_str("class:b") == attrs(color="00ff00")
+    assert style.get_attrs_for_style_str("class:b.a") == attrs(color="00ff00")
+
+    assert style.get_attrs_for_style_str("class:b.c") == attrs(
         color="0000ff",
-        bgcolor="",
-        bold=False,
-        underline=False,
-        strike=False,
         italic=True,
-        blink=False,
-        reverse=False,
-        hidden=False,
-        dim=False,
     )
-    assert style.get_attrs_for_style_str("class:b.c") == expected
-    assert style.get_attrs_for_style_str("class:b.c.d") == expected
+    assert style.get_attrs_for_style_str("class:b.c.d") == attrs(
+        color="0000ff",
+        italic=True,
+    )
 
 
 def test_swap_light_and_dark_style_transformation():
     transformation = SwapLightAndDarkStyleTransformation()
 
-    # Test with 6 digit hex colors.
     before = Attrs(
         color="440000",
         bgcolor="888844",
@@ -248,6 +153,7 @@ def test_swap_light_and_dark_style_transformation():
         hidden=False,
         dim=False,
     )
+
     after = Attrs(
         color="ffbbbb",
         bgcolor="bbbb76",
@@ -263,7 +169,6 @@ def test_swap_light_and_dark_style_transformation():
 
     assert transformation.transform_attrs(before) == after
 
-    # Test with ANSI colors.
     before = Attrs(
         color="ansired",
         bgcolor="ansiblack",
@@ -276,6 +181,7 @@ def test_swap_light_and_dark_style_transformation():
         hidden=False,
         dim=False,
     )
+
     after = Attrs(
         color="ansibrightred",
         bgcolor="ansiwhite",
