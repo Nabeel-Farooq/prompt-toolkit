@@ -1,71 +1,88 @@
 """
-Parser for the Telnet protocol. (Not a complete implementation of the telnet
-specification, but sufficient for a command line interface.)
+Minimal Telnet protocol parser.
 
-Inspired by `Twisted.conch.telnet`.
+This implementation is intentionally lightweight and focused on
+interactive terminal sessions rather than full RFC compliance.
+
+Inspired by Twisted's `conch.telnet`.
 """
 
 from __future__ import annotations
 
 import struct
 from collections.abc import Callable, Generator
+from typing import Final
 
 from .log import logger
 
-__all__ = [
-    "TelnetProtocolParser",
-]
+__all__ = ["TelnetProtocolParser"]
 
 
-def int2byte(number: int) -> bytes:
-    return bytes((number,))
+def _byte(value: int) -> bytes:
+    """Convert an integer into a single-byte bytes object."""
+    return bytes((value,))
 
 
-# Telnet constants.
-NOP = int2byte(0)
-SGA = int2byte(3)
+# Telnet command constants.
+IAC: Final = _byte(255)  # Interpret As Command
+DONT: Final = _byte(254)
+DO: Final = _byte(253)
+WONT: Final = _byte(252)
+WILL: Final = _byte(251)
+SB: Final = _byte(250)  # Subnegotiation Begin
+GA: Final = _byte(249)
+EL: Final = _byte(248)
+EC: Final = _byte(247)
+AYT: Final = _byte(246)
+AO: Final = _byte(245)
+IP: Final = _byte(244)
+BRK: Final = _byte(243)
+DM: Final = _byte(242)
+SE: Final = _byte(240)  # Subnegotiation End
 
-IAC = int2byte(255)
-DO = int2byte(253)
-DONT = int2byte(254)
-LINEMODE = int2byte(34)
-SB = int2byte(250)
-WILL = int2byte(251)
-WONT = int2byte(252)
-MODE = int2byte(1)
-SE = int2byte(240)
-ECHO = int2byte(1)
-NAWS = int2byte(31)
-LINEMODE = int2byte(34)
-SUPPRESS_GO_AHEAD = int2byte(3)
+# Telnet options.
+ECHO: Final = _byte(1)
+SGA: Final = _byte(3)  # Suppress Go Ahead
+NAWS: Final = _byte(31)  # Negotiate About Window Size
+TTYPE: Final = _byte(24)  # Terminal Type
+LINEMODE: Final = _byte(34)
 
-TTYPE = int2byte(24)
-SEND = int2byte(1)
-IS = int2byte(0)
+# Subnegotiation values.
+IS: Final = _byte(0)
+SEND: Final = _byte(1)
+MODE: Final = _byte(1)
 
-DM = int2byte(242)
-BRK = int2byte(243)
-IP = int2byte(244)
-AO = int2byte(245)
-AYT = int2byte(246)
-EC = int2byte(247)
-EL = int2byte(248)
-GA = int2byte(249)
+# Simple commands handled without payload.
+_SIMPLE_COMMANDS: Final = {
+    NOP := _byte(0),
+    DM,
+    BRK,
+    IP,
+    AO,
+    AYT,
+    EC,
+    EL,
+    GA,
+}
+
+# Negotiation commands.
+_NEGOTIATION_COMMANDS: Final = {DO, DONT, WILL, WONT}
 
 
 class TelnetProtocolParser:
     """
-    Parser for the Telnet protocol.
-    Usage::
+    Incremental Telnet protocol parser.
 
-        def data_received(data):
-            print(data)
+    Example:
+        ```python
+        parser = TelnetProtocolParser(
+            data_received_callback=print,
+            size_received_callback=lambda r, c: print(r, c),
+            ttype_received_callback=print,
+        )
 
-        def size_received(rows, columns):
-            print(rows, columns)
-
-        p = TelnetProtocolParser(data_received, size_received)
-        p.feed(binary_data)
+        parser.feed(binary_data)
+        ```
     """
 
     def __init__(
@@ -79,131 +96,186 @@ class TelnetProtocolParser:
         self.ttype_received_callback = ttype_received_callback
 
         self._parser = self._parse_coroutine()
-        self._parser.send(None)  # type: ignore
+        next(self._parser)
+
+    # ------------------------------------------------------------------
+    # Public callbacks
+    # ------------------------------------------------------------------
 
     def received_data(self, data: bytes) -> None:
+        """Handle regular incoming data."""
         self.data_received_callback(data)
 
-    def do_received(self, data: bytes) -> None:
-        """Received telnet DO command."""
-        logger.info("DO %r", data)
+    def do_received(self, option: bytes) -> None:
+        logger.info("DO %r", option)
 
-    def dont_received(self, data: bytes) -> None:
-        """Received telnet DONT command."""
-        logger.info("DONT %r", data)
+    def dont_received(self, option: bytes) -> None:
+        logger.info("DONT %r", option)
 
-    def will_received(self, data: bytes) -> None:
-        """Received telnet WILL command."""
-        logger.info("WILL %r", data)
+    def will_received(self, option: bytes) -> None:
+        logger.info("WILL %r", option)
 
-    def wont_received(self, data: bytes) -> None:
-        """Received telnet WONT command."""
-        logger.info("WONT %r", data)
+    def wont_received(self, option: bytes) -> None:
+        logger.info("WONT %r", option)
 
-    def command_received(self, command: bytes, data: bytes) -> None:
-        if command == DO:
-            self.do_received(data)
+    # ------------------------------------------------------------------
+    # Command handling
+    # ------------------------------------------------------------------
 
-        elif command == DONT:
-            self.dont_received(data)
+    def command_received(self, command: bytes, option: bytes) -> None:
+        """Dispatch negotiation commands."""
+        handlers = {
+            DO: self.do_received,
+            DONT: self.dont_received,
+            WILL: self.will_received,
+            WONT: self.wont_received,
+        }
 
-        elif command == WILL:
-            self.will_received(data)
+        handler = handlers.get(command)
 
-        elif command == WONT:
-            self.wont_received(data)
+        if handler is not None:
+            handler(option)
+        else:
+            logger.info("Unhandled command: %r %r", command, option)
+
+    # ------------------------------------------------------------------
+    # Subnegotiation handling
+    # ------------------------------------------------------------------
+
+    def naws(self, payload: bytes) -> None:
+        """
+        Handle NAWS (Negotiate About Window Size).
+
+        Payload format:
+            - 2 bytes: columns
+            - 2 bytes: rows
+        """
+        if len(payload) != 4:
+            logger.warning("Invalid NAWS payload length: %d", len(payload))
+            return
+
+        columns, rows = struct.unpack("!HH", payload)
+        self.size_received_callback(rows, columns)
+
+    def ttype(self, payload: bytes) -> None:
+        """
+        Handle terminal type negotiation.
+        """
+        if not payload:
+            logger.warning("Empty TTYPE payload")
+            return
+
+        subcommand = payload[:1]
+        terminal_data = payload[1:]
+
+        if subcommand != IS:
+            logger.warning("Unsupported TTYPE subcommand: %r", subcommand)
+            return
+
+        try:
+            terminal_type = terminal_data.decode("ascii")
+        except UnicodeDecodeError:
+            logger.warning("Invalid terminal type encoding")
+            return
+
+        self.ttype_received_callback(terminal_type)
+
+    def negotiate(self, payload: bytes) -> None:
+        """
+        Handle subnegotiation payloads.
+        """
+        if not payload:
+            logger.warning("Empty negotiation payload")
+            return
+
+        option = payload[:1]
+        option_payload = payload[1:]
+
+        if option == NAWS:
+            self.naws(option_payload)
+
+        elif option == TTYPE:
+            self.ttype(option_payload)
 
         else:
-            logger.info("command received %r %r", command, data)
+            logger.debug(
+                "Unhandled negotiation option %r (%d bytes)",
+                option,
+                len(option_payload),
+            )
 
-    def naws(self, data: bytes) -> None:
-        """
-        Received NAWS. (Window dimensions.)
-        """
-        if len(data) == 4:
-            # NOTE: the first parameter of struct.unpack should be
-            # a 'str' object. Both on Py2/py3. This crashes on OSX
-            # otherwise.
-            columns, rows = struct.unpack("!HH", data)
-            self.size_received_callback(rows, columns)
-        else:
-            logger.warning("Wrong number of NAWS bytes")
-
-    def ttype(self, data: bytes) -> None:
-        """
-        Received terminal type.
-        """
-        subcmd, data = data[0:1], data[1:]
-        if subcmd == IS:
-            ttype = data.decode("ascii")
-            self.ttype_received_callback(ttype)
-        else:
-            logger.warning("Received a non-IS terminal type Subnegotiation")
-
-    def negotiate(self, data: bytes) -> None:
-        """
-        Got negotiate data.
-        """
-        command, payload = data[0:1], data[1:]
-
-        if command == NAWS:
-            self.naws(payload)
-        elif command == TTYPE:
-            self.ttype(payload)
-        else:
-            logger.info("Negotiate (%r got bytes)", len(data))
+    # ------------------------------------------------------------------
+    # Parser state machine
+    # ------------------------------------------------------------------
 
     def _parse_coroutine(self) -> Generator[None, bytes, None]:
         """
-        Parser state machine.
-        Every 'yield' expression returns the next byte.
+        Incremental Telnet parser state machine.
+
+        Each `yield` receives exactly one byte.
         """
         while True:
-            d = yield
+            byte = yield
 
-            if d == int2byte(0):
-                pass  # NOP
+            # Ignore NULL bytes.
+            if byte == b"\x00":
+                continue
 
-            # Go to state escaped.
-            elif d == IAC:
-                d2 = yield
+            # Regular data byte.
+            if byte != IAC:
+                self.received_data(byte)
+                continue
 
-                if d2 == IAC:
-                    self.received_data(d2)
+            # Escaped Telnet command sequence.
+            command = yield
 
-                # Handle simple commands.
-                elif d2 in (NOP, DM, BRK, IP, AO, AYT, EC, EL, GA):
-                    self.command_received(d2, b"")
+            # Escaped IAC byte.
+            if command == IAC:
+                self.received_data(IAC)
+                continue
 
-                # Handle IAC-[DO/DONT/WILL/WONT] commands.
-                elif d2 in (DO, DONT, WILL, WONT):
-                    d3 = yield
-                    self.command_received(d2, d3)
+            # Simple one-byte commands.
+            if command in _SIMPLE_COMMANDS:
+                self.command_received(command, b"")
+                continue
 
-                # Subnegotiation
-                elif d2 == SB:
-                    # Consume everything until next IAC-SE
-                    data = []
+            # Negotiation commands with single-byte payload.
+            if command in _NEGOTIATION_COMMANDS:
+                option = yield
+                self.command_received(command, option)
+                continue
 
-                    while True:
-                        d3 = yield
+            # Subnegotiation sequence.
+            if command == SB:
+                buffer = bytearray()
 
-                        if d3 == IAC:
-                            d4 = yield
-                            if d4 == SE:
-                                break
-                            else:
-                                data.append(d4)
-                        else:
-                            data.append(d3)
+                while True:
+                    chunk = yield
 
-                    self.negotiate(b"".join(data))
-            else:
-                self.received_data(d)
+                    if chunk != IAC:
+                        buffer.extend(chunk)
+                        continue
+
+                    escaped = yield
+
+                    # End of subnegotiation.
+                    if escaped == SE:
+                        break
+
+                    # Escaped byte inside payload.
+                    buffer.extend(escaped)
+
+                self.negotiate(bytes(buffer))
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def feed(self, data: bytes) -> None:
         """
-        Feed data to the parser.
+        Feed raw Telnet data into the parser.
         """
-        for b in data:
-            self._parser.send(int2byte(b))
+        parser = self._parser.send
+
+        for value in data:
+            parser(_byte(value))
