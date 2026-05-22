@@ -1,49 +1,57 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Union, cast
+from typing import TYPE_CHECKING, TypeAlias, Union, cast
 
 from prompt_toolkit.mouse_events import MouseEvent
 
 if TYPE_CHECKING:
-    from typing_extensions import Protocol
+    from typing_extensions import Protocol, TypeGuard
 
-    from prompt_toolkit.key_binding.key_bindings import NotImplementedOrNone
+    from prompt_toolkit.key_binding.key_bindings import (
+        NotImplementedOrNone,
+    )
 
 __all__ = [
     "OneStyleAndTextTuple",
     "StyleAndTextTuples",
     "MagicFormattedText",
     "AnyFormattedText",
+    "FormattedText",
+    "Template",
     "to_formatted_text",
     "is_formatted_text",
-    "Template",
     "merge_formatted_text",
-    "FormattedText",
 ]
 
-OneStyleAndTextTuple = (
-    tuple[str, str] | tuple[str, str, Callable[[MouseEvent], "NotImplementedOrNone"]]
+
+# ============================================================================
+# Types
+# ============================================================================
+
+
+MouseHandler = Callable[[MouseEvent], "NotImplementedOrNone"]
+
+
+OneStyleAndTextTuple: TypeAlias = (
+    tuple[str, str]
+    | tuple[str, str, MouseHandler]
 )
 
-
-# List of (style, text) tuples.
-StyleAndTextTuples = list[OneStyleAndTextTuple]
+StyleAndTextTuples: TypeAlias = list[OneStyleAndTextTuple]
 
 
 if TYPE_CHECKING:
-    from typing import TypeGuard
 
     class MagicFormattedText(Protocol):
         """
-        Any object that implements ``__pt_formatted_text__`` represents formatted
-        text.
+        Protocol for objects implementing formatted text conversion.
         """
 
         def __pt_formatted_text__(self) -> StyleAndTextTuples: ...
 
 
-AnyFormattedText = Union[
+AnyFormattedText: TypeAlias = Union[
     str,
     "MagicFormattedText",
     StyleAndTextTuples,
@@ -52,128 +60,224 @@ AnyFormattedText = Union[
 ]
 
 
-def to_formatted_text(
-    value: AnyFormattedText, style: str = "", auto_convert: bool = False
+# ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _apply_style(
+    fragments: StyleAndTextTuples,
+    style: str,
+) -> StyleAndTextTuples:
+    """
+    Apply an additional style string to all fragments.
+    """
+    if not style:
+        return fragments
+
+    return cast(
+        StyleAndTextTuples,
+        [
+            (
+                f"{style} {fragment_style}".strip(),
+                *rest,
+            )
+            for fragment_style, *rest in fragments
+        ],
+    )
+
+
+def _ensure_formatted_text(
+    value: FormattedText | StyleAndTextTuples,
 ) -> FormattedText:
     """
-    Convert the given value (which can be formatted text) into a list of text
-    fragments. (Which is the canonical form of formatted text.) The outcome is
-    always a `FormattedText` instance, which is a list of (style, text) tuples.
+    Ensure result is wrapped in `FormattedText`.
+    """
+    if isinstance(value, FormattedText):
+        return value
 
-    It can take a plain text string, an `HTML` or `ANSI` object, anything that
-    implements `__pt_formatted_text__` or a callable that takes no arguments and
-    returns one of those.
+    return FormattedText(value)
 
-    :param style: An additional style string which is applied to all text
-        fragments.
-    :param auto_convert: If `True`, also accept other types, and convert them
-        to a string first.
+
+# ============================================================================
+# Conversion
+# ============================================================================
+
+
+def to_formatted_text(
+    value: AnyFormattedText,
+    style: str = "",
+    auto_convert: bool = False,
+) -> FormattedText:
+    """
+    Convert any supported formatted text object into `FormattedText`.
+
+    Supported values:
+        - Plain strings
+        - `FormattedText`
+        - Lists of fragments
+        - Objects implementing `__pt_formatted_text__`
+        - Zero-argument callables returning formatted text
+        - `None`
+
+    :param style:
+        Additional style string applied to all fragments.
+
+    :param auto_convert:
+        When `True`, unsupported values are converted using `str()`.
     """
     result: FormattedText | StyleAndTextTuples
 
     if value is None:
         result = []
+
     elif isinstance(value, str):
         result = [("", value)]
+
     elif isinstance(value, list):
-        result = value  # StyleAndTextTuples
+        result = value
+
     elif hasattr(value, "__pt_formatted_text__"):
-        result = cast("MagicFormattedText", value).__pt_formatted_text__()
+        result = cast(
+            "MagicFormattedText",
+            value,
+        ).__pt_formatted_text__()
+
     elif callable(value):
-        return to_formatted_text(value(), style=style)
+        return to_formatted_text(
+            value(),
+            style=style,
+            auto_convert=auto_convert,
+        )
+
     elif auto_convert:
-        result = [("", f"{value}")]
+        result = [("", str(value))]
+
     else:
         raise ValueError(
-            f"No formatted text. Expecting a unicode object, HTML, ANSI or a FormattedText instance. Got {value!r}"
+            "Expected formatted text, plain string, or object "
+            f"implementing '__pt_formatted_text__'. Got: {value!r}"
         )
 
-    # Apply extra style.
-    if style:
-        result = cast(
-            StyleAndTextTuples,
-            [(style + " " + item_style, *rest) for item_style, *rest in result],
-        )
-
-    # Make sure the result is wrapped in a `FormattedText`. Among other
-    # reasons, this is important for `print_formatted_text` to work correctly
-    # and distinguish between lists and formatted text.
-    if isinstance(result, FormattedText):
-        return result
-    else:
-        return FormattedText(result)
+    return _ensure_formatted_text(
+        _apply_style(result, style),
+    )
 
 
-def is_formatted_text(value: object) -> TypeGuard[AnyFormattedText]:
+# ============================================================================
+# Validation
+# ============================================================================
+
+
+def is_formatted_text(
+    value: object,
+) -> TypeGuard[AnyFormattedText]:
     """
-    Check whether the input is valid formatted text (for use in assert
-    statements).
-    In case of a callable, it doesn't check the return type.
+    Return whether the value is accepted as formatted text.
+
+    Note:
+        Callables are accepted without validating their return type.
     """
-    if callable(value):
-        return True
-    if isinstance(value, (str, list)):
-        return True
-    if hasattr(value, "__pt_formatted_text__"):
-        return True
-    return False
+    return (
+        callable(value)
+        or isinstance(value, (str, list))
+        or hasattr(value, "__pt_formatted_text__")
+    )
+
+
+# ============================================================================
+# Formatted text container
+# ============================================================================
 
 
 class FormattedText(StyleAndTextTuples):
     """
-    A list of ``(style, text)`` tuples.
+    Canonical formatted text container.
 
-    (In some situations, this can also be ``(style, text, mouse_handler)``
-    tuples.)
+    Stores a list of:
+        - `(style, text)`
+        - `(style, text, mouse_handler)`
+    tuples.
     """
 
     def __pt_formatted_text__(self) -> StyleAndTextTuples:
         return self
 
     def __repr__(self) -> str:
-        return f"FormattedText({super().__repr__()})"
+        return f"{self.__class__.__name__}({list(self)!r})"
+
+
+# ============================================================================
+# Template
+# ============================================================================
 
 
 class Template:
     """
-    Template for string interpolation with formatted text.
+    Template helper for formatted text interpolation.
 
-    Example::
-
-        Template(' ... {} ... ').format(HTML(...))
-
-    :param text: Plain text.
+    Example:
+        ```python
+        Template("Hello {}").format(HTML("<b>world</b>"))
+        ```
     """
 
     def __init__(self, text: str) -> None:
-        assert "{0}" not in text
+        if "{0}" in text:
+            raise ValueError(
+                "Positional formatting is not supported."
+            )
+
         self.text = text
 
-    def format(self, *values: AnyFormattedText) -> AnyFormattedText:
-        def get_result() -> AnyFormattedText:
-            # Split the template in parts.
+    def format(
+        self,
+        *values: AnyFormattedText,
+    ) -> Callable[[], FormattedText]:
+        """
+        Create lazily evaluated formatted text.
+        """
+
+        def build() -> FormattedText:
             parts = self.text.split("{}")
-            assert len(parts) - 1 == len(values)
+
+            if len(parts) - 1 != len(values):
+                raise ValueError(
+                    "Template placeholder count does not match "
+                    "number of values."
+                )
 
             result = FormattedText()
-            for part, val in zip(parts, values):
+
+            for part, value in zip(parts, values):
                 result.append(("", part))
-                result.extend(to_formatted_text(val))
+                result.extend(to_formatted_text(value))
+
             result.append(("", parts[-1]))
+
             return result
 
-        return get_result
+        return build
 
 
-def merge_formatted_text(items: Iterable[AnyFormattedText]) -> AnyFormattedText:
+# ============================================================================
+# Merge helpers
+# ============================================================================
+
+
+def merge_formatted_text(
+    items: Iterable[AnyFormattedText],
+) -> Callable[[], FormattedText]:
     """
-    Merge (Concatenate) several pieces of formatted text together.
+    Concatenate multiple formatted text objects.
     """
 
-    def _merge_formatted_text() -> AnyFormattedText:
+    def build() -> FormattedText:
         result = FormattedText()
-        for i in items:
-            result.extend(to_formatted_text(i))
+
+        for item in items:
+            result.extend(to_formatted_text(item))
+
         return result
 
-    return _merge_formatted_text
+    return build
