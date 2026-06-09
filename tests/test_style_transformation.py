@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from prompt_toolkit.styles import AdjustBrightnessStyleTransformation, Attrs
+from prompt_toolkit.styles import (
+    AdjustBrightnessStyleTransformation,
+    Attrs,
+)
 
 
 @pytest.fixture
-def default_attrs():
+def default_attrs() -> Attrs:
     return Attrs(
         color="",
         bgcolor="",
@@ -21,32 +24,68 @@ def default_attrs():
     )
 
 
-def test_adjust_brightness_style_transformation(default_attrs):
-    tr = AdjustBrightnessStyleTransformation(0.5, 1.0)
+@pytest.mark.parametrize(
+    ("color", "expected"),
+    [
+        ("ff0000", "ff7f7f"),
+        ("00ffaa", "7fffd4"),
+        ("ansiblue", "6666ff"),
+        ("ansidefault", "ansidefault"),
+    ],
+)
+def test_adjust_brightness_transformation(
+    default_attrs: Attrs,
+    color: str,
+    expected: str,
+) -> None:
+    transformer = AdjustBrightnessStyleTransformation(
+        min_brightness=0.5,
+        max_brightness=1.0,
+    )
 
-    attrs = tr.transform_attrs(default_attrs._replace(color="ff0000"))
-    assert attrs.color == "ff7f7f"
+    attrs = transformer.transform_attrs(
+        default_attrs._replace(color=color)
+    )
 
-    attrs = tr.transform_attrs(default_attrs._replace(color="00ffaa"))
-    assert attrs.color == "7fffd4"
+    assert attrs.color == expected
 
-    # When a background color is given, nothing should change.
-    attrs = tr.transform_attrs(default_attrs._replace(color="00ffaa", bgcolor="white"))
+
+def test_background_color_prevents_transformation(
+    default_attrs: Attrs,
+) -> None:
+    transformer = AdjustBrightnessStyleTransformation(
+        min_brightness=0.5,
+        max_brightness=1.0,
+    )
+
+    attrs = transformer.transform_attrs(
+        default_attrs._replace(
+            color="00ffaa",
+            bgcolor="white",
+        )
+    )
+
     assert attrs.color == "00ffaa"
 
-    # Test ansi colors.
-    attrs = tr.transform_attrs(default_attrs._replace(color="ansiblue"))
-    assert attrs.color == "6666ff"
 
-    # Test 'ansidefault'. This shouldn't change.
-    attrs = tr.transform_attrs(default_attrs._replace(color="ansidefault"))
-    assert attrs.color == "ansidefault"
+@pytest.mark.parametrize(
+    "color",
+    [
+        "ansiblue",
+        "00ffaa",
+    ],
+)
+def test_identity_transformation(
+    default_attrs: Attrs,
+    color: str,
+) -> None:
+    transformer = AdjustBrightnessStyleTransformation(
+        min_brightness=0,
+        max_brightness=1,
+    )
 
-    # When 0 and 1 are given, don't do any style transformation.
-    tr2 = AdjustBrightnessStyleTransformation(0, 1)
+    attrs = transformer.transform_attrs(
+        default_attrs._replace(color=color)
+    )
 
-    attrs = tr2.transform_attrs(default_attrs._replace(color="ansiblue"))
-    assert attrs.color == "ansiblue"
-
-    attrs = tr2.transform_attrs(default_attrs._replace(color="00ffaa"))
-    assert attrs.color == "00ffaa"
+    assert attrs.color == color
