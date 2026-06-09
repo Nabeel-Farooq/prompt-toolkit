@@ -1,20 +1,36 @@
 from __future__ import annotations
 
+import pytest
+
 from prompt_toolkit.formatted_text import fragment_list_to_text
 from prompt_toolkit.layout import to_window
 from prompt_toolkit.widgets import Button
 
 
-def _to_text(button: Button) -> str:
-    control = to_window(button).content
-    return fragment_list_to_text(control.text())
+def button_text(button: Button) -> str:
+    """Extract rendered text from a Button widget."""
+    return fragment_list_to_text(
+        to_window(button).content.text()
+    )
 
 
-def test_default_button():
-    button = Button("Exit")
-    assert _to_text(button) == "<   Exit   >"
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({}, "<   Exit   >"),
+        (
+            {
+                "left_symbol": "[",
+                "right_symbol": "]",
+            },
+            "[   Exit   ]",
+        ),
+    ],
+)
+def test_button_rendering(
+    kwargs: dict[str, str],
+    expected: str,
+) -> None:
+    button = Button("Exit", **kwargs)
 
-
-def test_custom_button():
-    button = Button("Exit", left_symbol="[", right_symbol="]")
-    assert _to_text(button) == "[   Exit   ]"
+    assert button_text(button) == expected
