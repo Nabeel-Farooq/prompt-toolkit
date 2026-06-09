@@ -1,28 +1,28 @@
 from __future__ import annotations
 
 from asyncio import run
+from collections.abc import Generator
 
 from prompt_toolkit.eventloop import generator_to_async_generator
 
 
-def _sync_generator():
+def _sync_generator() -> Generator[int, None, None]:
     yield 1
     yield 10
 
 
-def test_generator_to_async_generator():
+def test_generator_to_async_generator() -> None:
     """
-    Test conversion of sync to async generator.
-    This should run the synchronous parts in a background thread.
+    Verify that a synchronous generator can be consumed
+    through an async generator interface.
     """
-    async_gen = generator_to_async_generator(_sync_generator)
 
-    items = []
+    async def collect_items() -> list[int]:
+        return [
+            item
+            async for item in generator_to_async_generator(
+                _sync_generator
+            )
+        ]
 
-    async def consume_async_generator():
-        async for item in async_gen:
-            items.append(item)
-
-    # Run the event loop until all items are collected.
-    run(consume_async_generator())
-    assert items == [1, 10]
+    assert run(collect_items()) == [1, 10]
