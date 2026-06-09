@@ -7,15 +7,33 @@ import pytest
 from prompt_toolkit.utils import take_using_weights
 
 
-def test_using_weights():
-    def take(generator, count):
-        return list(itertools.islice(generator, 0, count))
+def take_items(generator, count: int) -> list[str]:
+    """Consume a fixed number of items from a generator."""
+    return list(itertools.islice(generator, count))
 
-    # Check distribution.
-    data = take(take_using_weights(["A", "B", "C"], [5, 10, 20]), 35)
+
+def test_weight_distribution() -> None:
+    data = take_items(
+        take_using_weights(
+            ["A", "B", "C"],
+            [5, 10, 20],
+        ),
+        35,
+    )
+
     assert data.count("A") == 5
     assert data.count("B") == 10
     assert data.count("C") == 20
+
+
+def test_weight_distribution_order() -> None:
+    data = take_items(
+        take_using_weights(
+            ["A", "B", "C"],
+            [5, 10, 20],
+        ),
+        35,
+    )
 
     assert data == [
         "A",
@@ -55,24 +73,38 @@ def test_using_weights():
         "C",
     ]
 
-    # Another order.
-    data = take(take_using_weights(["A", "B", "C"], [20, 10, 5]), 35)
-    assert data.count("A") == 20
-    assert data.count("B") == 10
-    assert data.count("C") == 5
 
-    # Bigger numbers.
-    data = take(take_using_weights(["A", "B", "C"], [20, 10, 5]), 70)
-    assert data.count("A") == 40
-    assert data.count("B") == 20
-    assert data.count("C") == 10
+@pytest.mark.parametrize(
+    ("weights", "count", "expected"),
+    [
+        ([20, 10, 5], 35, {"A": 20, "B": 10, "C": 5}),
+        ([20, 10, 5], 70, {"A": 40, "B": 20, "C": 10}),
+        ([-20, 10, 0], 70, {"A": 0, "B": 70, "C": 0}),
+    ],
+)
+def test_weight_counts(
+    weights: list[int],
+    count: int,
+    expected: dict[str, int],
+) -> None:
+    data = take_items(
+        take_using_weights(
+            ["A", "B", "C"],
+            weights,
+        ),
+        count,
+    )
 
-    # Negative numbers.
-    data = take(take_using_weights(["A", "B", "C"], [-20, 10, 0]), 70)
-    assert data.count("A") == 0
-    assert data.count("B") == 70
-    assert data.count("C") == 0
+    for item, expected_count in expected.items():
+        assert data.count(item) == expected_count
 
-    # All zero-weight items.
+
+def test_all_zero_weights_raise_value_error() -> None:
     with pytest.raises(ValueError):
-        take(take_using_weights(["A", "B", "C"], [0, 0, 0]), 70)
+        take_items(
+            take_using_weights(
+                ["A", "B", "C"],
+                [0, 0, 0],
+            ),
+            70,
+        )
