@@ -23,17 +23,15 @@ class COORD(Structure):
         Y: int
 
     _fields_ = [
-        ("X", c_short),  # Short
-        ("Y", c_short),  # Short
+        ("X", c_short),
+        ("Y", c_short),
     ]
 
     def __repr__(self) -> str:
-        return "{}(X={!r}, Y={!r}, type_x={!r}, type_y={!r})".format(
-            self.__class__.__name__,
-            self.X,
-            self.Y,
-            type(self.X),
-            type(self.Y),
+        return (
+            f"{self.__class__.__name__}("
+            f"X={self.X!r}, Y={self.Y!r}, "
+            f"type_x={type(self.X)!r}, type_y={type(self.Y)!r})"
         )
 
 
@@ -62,12 +60,12 @@ class KEY_EVENT_RECORD(Structure):
         ControlKeyState: int
 
     _fields_ = [
-        ("KeyDown", c_long),  # bool
-        ("RepeatCount", c_short),  # word
-        ("VirtualKeyCode", c_short),  # word
-        ("VirtualScanCode", c_short),  # word
-        ("uChar", UNICODE_OR_ASCII),  # Unicode or ASCII.
-        ("ControlKeyState", c_long),  # double word
+        ("KeyDown", c_long),
+        ("RepeatCount", c_short),
+        ("VirtualKeyCode", c_short),
+        ("VirtualScanCode", c_short),
+        ("uChar", UNICODE_OR_ASCII),
+        ("ControlKeyState", c_long),
     ]
 
 
@@ -84,9 +82,9 @@ class MOUSE_EVENT_RECORD(Structure):
 
     _fields_ = [
         ("MousePosition", COORD),
-        ("ButtonState", c_long),  # dword
-        ("ControlKeyState", c_long),  # dword
-        ("EventFlags", c_long),  # dword
+        ("ButtonState", c_long),
+        ("ControlKeyState", c_long),
+        ("EventFlags", c_long),
     ]
 
 
@@ -109,7 +107,7 @@ class MENU_EVENT_RECORD(Structure):
     if TYPE_CHECKING:
         CommandId: int
 
-    _fields_ = [("CommandId", c_long)]  # uint
+    _fields_ = [("CommandId", c_long)]
 
 
 class FOCUS_EVENT_RECORD(Structure):
@@ -120,7 +118,7 @@ class FOCUS_EVENT_RECORD(Structure):
     if TYPE_CHECKING:
         SetFocus: int
 
-    _fields_ = [("SetFocus", c_long)]  # bool
+    _fields_ = [("SetFocus", c_long)]
 
 
 class EVENT_RECORD(Union):
@@ -149,7 +147,10 @@ class INPUT_RECORD(Structure):
         EventType: int
         Event: EVENT_RECORD
 
-    _fields_ = [("EventType", c_short), ("Event", EVENT_RECORD)]  # word  # Union.
+    _fields_ = [
+        ("EventType", c_short),
+        ("Event", EVENT_RECORD),
+    ]
 
 
 EventTypes = {
@@ -162,7 +163,7 @@ EventTypes = {
 
 
 class SMALL_RECT(Structure):
-    """struct in wincon.h."""
+    """Struct in wincon.h."""
 
     if TYPE_CHECKING:
         Left: int
@@ -179,7 +180,7 @@ class SMALL_RECT(Structure):
 
 
 class CONSOLE_SCREEN_BUFFER_INFO(Structure):
-    """struct in wincon.h."""
+    """Struct in wincon.h."""
 
     if TYPE_CHECKING:
         dwSize: COORD
@@ -197,18 +198,19 @@ class CONSOLE_SCREEN_BUFFER_INFO(Structure):
     ]
 
     def __repr__(self) -> str:
-        return "CONSOLE_SCREEN_BUFFER_INFO({!r},{!r},{!r},{!r},{!r},{!r},{!r},{!r},{!r},{!r},{!r})".format(
-            self.dwSize.Y,
-            self.dwSize.X,
-            self.dwCursorPosition.Y,
-            self.dwCursorPosition.X,
-            self.wAttributes,
-            self.srWindow.Top,
-            self.srWindow.Left,
-            self.srWindow.Bottom,
-            self.srWindow.Right,
-            self.dwMaximumWindowSize.Y,
-            self.dwMaximumWindowSize.X,
+        return (
+            "CONSOLE_SCREEN_BUFFER_INFO("
+            f"{self.dwSize.Y!r},"
+            f"{self.dwSize.X!r},"
+            f"{self.dwCursorPosition.Y!r},"
+            f"{self.dwCursorPosition.X!r},"
+            f"{self.wAttributes!r},"
+            f"{self.srWindow.Top!r},"
+            f"{self.srWindow.Left!r},"
+            f"{self.srWindow.Bottom!r},"
+            f"{self.srWindow.Right!r},"
+            f"{self.dwMaximumWindowSize.Y!r},"
+            f"{self.dwMaximumWindowSize.X!r})"
         )
 
 
