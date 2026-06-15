@@ -19,22 +19,22 @@ async def main() -> None:
     Create an input handler and continuously print pressed keys
     until Ctrl+C is received.
     """
-    done = asyncio.Event()
-    input = create_input()
+    done = asyncio.get_running_loop().create_future()
+    input_stream = create_input()
 
     def keys_ready() -> None:
         """
         Callback executed when input is available.
         """
-        for key_press in input.read_keys():
+        for key_press in input_stream.read_keys():
             print(key_press)
 
-            if key_press.key is Keys.ControlC:
-                done.set()
+            if key_press.key is Keys.ControlC and not done.done():
+                done.set_result(None)
                 return
 
-    with input.raw_mode(), input.attach(keys_ready):
-        await done.wait()
+    with input_stream.raw_mode(), input_stream.attach(keys_ready):
+        await done
 
 
 if __name__ == "__main__":
