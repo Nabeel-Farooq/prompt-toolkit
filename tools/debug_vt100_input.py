@@ -32,18 +32,13 @@ def main() -> None:
     """
     stdin = sys.stdin
     fileno = stdin.fileno()
-
     stream = Vt100Parser(callback)
+    read = stdin.read
+    feed = stream.feed
 
     with raw_mode(fileno):
-        while True:
-            char = stdin.read(1)
-
-            # EOF / stream closed safeguard.
-            if not char:
-                break
-
-            stream.feed(char)
+        while char := read(1):
+            feed(char)
 
 
 if __name__ == "__main__":
