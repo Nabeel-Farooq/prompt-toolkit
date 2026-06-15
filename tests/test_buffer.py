@@ -7,8 +7,7 @@ from prompt_toolkit.buffer import Buffer
 
 @pytest.fixture
 def _buffer():
-    buff = Buffer()
-    return buff
+    return Buffer()
 
 
 def test_initial(_buffer):
@@ -17,16 +16,20 @@ def test_initial(_buffer):
 
 
 def test_insert_text(_buffer):
-    _buffer.insert_text("some_text")
-    assert _buffer.text == "some_text"
-    assert _buffer.cursor_position == len("some_text")
+    text = "some_text"
+
+    _buffer.insert_text(text)
+
+    assert _buffer.text == text
+    assert _buffer.cursor_position == len(text)
 
 
 def test_cursor_movement(_buffer):
     _buffer.insert_text("some_text")
-    _buffer.cursor_left()
-    _buffer.cursor_left()
-    _buffer.cursor_left()
+
+    for _ in range(3):
+        _buffer.cursor_left()
+
     _buffer.cursor_right()
     _buffer.insert_text("A")
 
@@ -45,7 +48,7 @@ def test_backspace(_buffer):
 
 
 def test_cursor_up(_buffer):
-    # Cursor up to a line thats longer.
+    # Cursor up to a line that's longer.
     _buffer.insert_text("long line1\nline2")
     _buffer.cursor_up()
 
@@ -67,7 +70,7 @@ def test_cursor_down(_buffer):
     _buffer.insert_text("line1\nline2")
     _buffer.cursor_position = 3
 
-    # Normally going down
+    # Normally going down.
     _buffer.cursor_down()
     assert _buffer.document.cursor_position == len("line1\nlin")
 
@@ -87,7 +90,7 @@ def test_join_next_line(_buffer):
 
     assert _buffer.text == "line1\nline2 line3"
 
-    # Test when there is no '\n' in the text
+    # Test when there is no '\n' in the text.
     _buffer.reset()
     _buffer.insert_text("line1")
     _buffer.cursor_position = 0
