@@ -14,7 +14,9 @@ from prompt_toolkit.utils import is_windows
 
 
 class _Capture:
-    "Emulate an stdout object."
+    """Emulate an stdout object."""
+
+    __slots__ = ("_data",)
 
     def __init__(self):
         self._data = []
@@ -38,30 +40,43 @@ class _Capture:
         return -1
 
 
-@pytest.mark.skipif(is_windows(), reason="Doesn't run on Windows yet.")
+skip_windows = pytest.mark.skipif(
+    is_windows(),
+    reason="Doesn't run on Windows yet.",
+)
+
+
+@skip_windows
 def test_print_formatted_text():
     f = _Capture()
+
     pt_print([("", "hello"), ("", "world")], file=f)
-    assert "hello" in f.data
-    assert "world" in f.data
+
+    data = f.data
+    assert "hello" in data
+    assert "world" in data
 
 
-@pytest.mark.skipif(is_windows(), reason="Doesn't run on Windows yet.")
+@skip_windows
 def test_print_formatted_text_backslash_r():
     f = _Capture()
+
     pt_print("hello\r\n", file=f)
+
     assert "hello" in f.data
 
 
-@pytest.mark.skipif(is_windows(), reason="Doesn't run on Windows yet.")
+@skip_windows
 def test_formatted_text_with_style():
     f = _Capture()
+
     style = Style.from_dict(
         {
             "hello": "#ff0066",
             "world": "#44ff44 italic",
         }
     )
+
     tokens = FormattedText(
         [
             ("class:hello", "Hello "),
@@ -70,21 +85,24 @@ def test_formatted_text_with_style():
     )
 
     # NOTE: We pass the default (8bit) color depth, so that the unit tests
-    #       don't start failing when environment variables change.
+    # don't start failing when environment variables change.
     pt_print(tokens, style=style, file=f, color_depth=ColorDepth.DEFAULT)
-    assert "\x1b[0;38;5;197mHello" in f.data
-    assert "\x1b[0;38;5;83;3mworld" in f.data
+
+    data = f.data
+    assert "\x1b[0;38;5;197mHello" in data
+    assert "\x1b[0;38;5;83;3mworld" in data
 
 
-@pytest.mark.skipif(is_windows(), reason="Doesn't run on Windows yet.")
+@skip_windows
 def test_html_with_style():
     """
-    Text `print_formatted_text` with `HTML` wrapped in `to_formatted_text`.
+    Test `print_formatted_text` with `HTML` wrapped in `to_formatted_text`.
     """
     f = _Capture()
 
     html = HTML("<ansigreen>hello</ansigreen> <b>world</b>")
     formatted_text = to_formatted_text(html, style="class:myhtml")
+
     pt_print(formatted_text, file=f, color_depth=ColorDepth.DEFAULT)
 
     assert (
@@ -93,20 +111,24 @@ def test_html_with_style():
     )
 
 
-@pytest.mark.skipif(is_windows(), reason="Doesn't run on Windows yet.")
+@skip_windows
 def test_print_formatted_text_with_dim():
     """
     Test that dim formatting works correctly.
     """
     f = _Capture()
+
     style = Style.from_dict(
         {
             "dimtext": "dim",
         }
     )
+
     tokens = FormattedText([("class:dimtext", "dim text")])
 
     pt_print(tokens, style=style, file=f, color_depth=ColorDepth.DEFAULT)
 
-    # Check that the ANSI dim escape code (ESC[2m) is in the output
-    assert "\x1b[0;2m" in f.data or "\x1b[2m" in f.data
+    data = f.data
+
+    # Check that the ANSI dim escape code (ESC[2m) is in the output.
+    assert "\x1b[0;2m" in data or "\x1b[2m" in data
