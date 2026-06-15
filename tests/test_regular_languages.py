@@ -10,14 +10,9 @@ from prompt_toolkit.document import Document
 def test_simple_match():
     g = compile("hello|world")
 
-    m = g.match("hello")
-    assert isinstance(m, Match)
-
-    m = g.match("world")
-    assert isinstance(m, Match)
-
-    m = g.match("somethingelse")
-    assert m is None
+    assert isinstance(g.match("hello"), Match)
+    assert isinstance(g.match("world"), Match)
+    assert g.match("somethingelse") is None
 
 
 def test_variable_varname():
@@ -51,52 +46,79 @@ def test_prefix():
     """
     g = compile(r"(hello\ world|something\ else)")
 
-    m = g.match_prefix("hello world")
-    assert isinstance(m, Match)
-
-    m = g.match_prefix("he")
-    assert isinstance(m, Match)
-
-    m = g.match_prefix("")
-    assert isinstance(m, Match)
-
-    m = g.match_prefix("som")
-    assert isinstance(m, Match)
-
-    m = g.match_prefix("hello wor")
-    assert isinstance(m, Match)
+    for text in (
+        "hello world",
+        "he",
+        "",
+        "som",
+        "hello wor",
+    ):
+        assert isinstance(g.match_prefix(text), Match)
 
     m = g.match_prefix("no-match")
     assert m.trailing_input().start == 0
     assert m.trailing_input().stop == len("no-match")
 
-    m = g.match_prefix("hellotest")
+    text = "hellotest"
+    m = g.match_prefix(text)
     assert m.trailing_input().start == len("hello")
-    assert m.trailing_input().stop == len("hellotest")
+    assert m.trailing_input().stop == len(text)
 
 
 def test_completer():
     class completer1(Completer):
         def get_completions(self, document, complete_event):
-            yield Completion(f"before-{document.text}-after", -len(document.text))
-            yield Completion(f"before-{document.text}-after-B", -len(document.text))
+            text = document.text
+            start_position = -len(text)
+
+            yield Completion(
+                f"before-{text}-after",
+                start_position,
+            )
+            yield Completion(
+                f"before-{text}-after-B",
+                start_position,
+            )
 
     class completer2(Completer):
         def get_completions(self, document, complete_event):
-            yield Completion(f"before2-{document.text}-after2", -len(document.text))
-            yield Completion(f"before2-{document.text}-after2-B", -len(document.text))
+            text = document.text
+            start_position = -len(text)
 
-    # Create grammar.  "var1" + "whitespace" + "var2"
+            yield Completion(
+                f"before2-{text}-after2",
+                start_position,
+            )
+            yield Completion(
+                f"before2-{text}-after2-B",
+                start_position,
+            )
+
+    # Create grammar. "var1" + "whitespace" + "var2"
     g = compile(r"(?P<var1>[a-z]*) \s+ (?P<var2>[a-z]*)")
 
-    # Test 'get_completions()'
-    completer = GrammarCompleter(g, {"var1": completer1(), "var2": completer2()})
+    completer = GrammarCompleter(
+        g,
+        {
+            "var1": completer1(),
+            "var2": completer2(),
+        },
+    )
+
+    text = "abc def"
     completions = list(
-        completer.get_completions(Document("abc def", len("abc def")), CompleteEvent())
+        completer.get_completions(
+            Document(text, len(text)),
+            CompleteEvent(),
+        )
     )
 
     assert len(completions) == 2
-    assert completions[0].text == "before2-def-after2"
-    assert completions[0].start_position == -3
-    assert completions[1].text == "before2-def-after2-B"
-    assert completions[1].start_position == -3
+
+    completion = completions[0]
+    assert completion.text == "before2-def-after2"
+    assert completion.start_position == -3
+
+    completion = completions[1]
+    assert completion.text == "before2-def-after2-B"
+    assert completion.start_position == -3
