@@ -31,13 +31,19 @@ class ValidationError(Exception):
     :param message: Text.
     """
 
+    __slots__ = ("cursor_position", "message")
+
     def __init__(self, cursor_position: int = 0, message: str = "") -> None:
         super().__init__(message)
         self.cursor_position = cursor_position
         self.message = message
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(cursor_position={self.cursor_position!r}, message={self.message!r})"
+        return (
+            f"{self.__class__.__name__}("
+            f"cursor_position={self.cursor_position!r}, "
+            f"message={self.message!r})"
+        )
 
 
 class Validator(metaclass=ABCMeta):
@@ -61,7 +67,6 @@ class Validator(metaclass=ABCMeta):
 
         :param document: :class:`~prompt_toolkit.document.Document` instance.
         """
-        pass
 
     async def validate_async(self, document: Document) -> None:
         """
@@ -69,10 +74,7 @@ class Validator(metaclass=ABCMeta):
         This function can be overloaded in order to provide an asynchronous
         implementation.
         """
-        try:
-            self.validate(document)
-        except ValidationError:
-            raise
+        self.validate(document)
 
     @classmethod
     def from_callable(
@@ -96,7 +98,11 @@ class Validator(metaclass=ABCMeta):
         :param move_cursor_to_end: Move the cursor to the end of the input, if
             the input is invalid.
         """
-        return _ValidatorFromCallable(validate_func, error_message, move_cursor_to_end)
+        return _ValidatorFromCallable(
+            validate_func,
+            error_message,
+            move_cursor_to_end,
+        )
 
 
 class _ValidatorFromCallable(Validator):
@@ -104,8 +110,13 @@ class _ValidatorFromCallable(Validator):
     Validate input from a simple callable.
     """
 
+    __slots__ = ("func", "error_message", "move_cursor_to_end")
+
     def __init__(
-        self, func: Callable[[str], bool], error_message: str, move_cursor_to_end: bool
+        self,
+        func: Callable[[str], bool],
+        error_message: str,
+        move_cursor_to_end: bool,
     ) -> None:
         self.func = func
         self.error_message = error_message
@@ -115,13 +126,13 @@ class _ValidatorFromCallable(Validator):
         return f"Validator.from_callable({self.func!r})"
 
     def validate(self, document: Document) -> None:
-        if not self.func(document.text):
-            if self.move_cursor_to_end:
-                index = len(document.text)
-            else:
-                index = 0
+        if self.func(document.text):
+            return
 
-            raise ValidationError(cursor_position=index, message=self.error_message)
+        raise ValidationError(
+            cursor_position=len(document.text) if self.move_cursor_to_end else 0,
+            message=self.error_message,
+        )
 
 
 class ThreadedValidator(Validator):
@@ -130,6 +141,8 @@ class ThreadedValidator(Validator):
     (Use this to prevent the user interface from becoming unresponsive if the
     input validation takes too much time.)
     """
+
+    __slots__ = ("validator",)
 
     def __init__(self, validator: Validator) -> None:
         self.validator = validator
@@ -141,11 +154,7 @@ class ThreadedValidator(Validator):
         """
         Run the `validate` function in a thread.
         """
-
-        def run_validation_thread() -> None:
-            return self.validate(document)
-
-        await run_in_executor_with_context(run_validation_thread)
+        await run_in_executor_with_context(lambda: self.validate(document))
 
 
 class DummyValidator(Validator):
@@ -154,7 +163,7 @@ class DummyValidator(Validator):
     """
 
     def validate(self, document: Document) -> None:
-        pass  # Don't raise any exception.
+        pass
 
 
 class ConditionalValidator(Validator):
@@ -163,12 +172,13 @@ class ConditionalValidator(Validator):
     a filter. (This wraps around another validator.)
     """
 
+    __slots__ = ("validator", "filter")
+
     def __init__(self, validator: Validator, filter: FilterOrBool) -> None:
         self.validator = validator
         self.filter = to_filter(filter)
 
     def validate(self, document: Document) -> None:
-        # Call the validator only if the filter is active.
         if self.filter():
             self.validator.validate(document)
 
@@ -180,13 +190,13 @@ class DynamicValidator(Validator):
     :param get_validator: Callable that returns a :class:`.Validator` instance.
     """
 
+    __slots__ = ("get_validator",)
+
     def __init__(self, get_validator: Callable[[], Validator | None]) -> None:
         self.get_validator = get_validator
 
     def validate(self, document: Document) -> None:
-        validator = self.get_validator() or DummyValidator()
-        validator.validate(document)
+        (self.get_validator() or DummyValidator()).validate(document)
 
     async def validate_async(self, document: Document) -> None:
-        validator = self.get_validator() or DummyValidator()
-        await validator.validate_async(document)
+        await (self.get_validator() or DummyValidator()).validate_async(document)
